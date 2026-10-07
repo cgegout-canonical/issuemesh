@@ -463,7 +463,43 @@ async fn run_search_pipeline(state: Arc<AppState>, job_id: String, query: String
         .jobs
         .emit_event(&job_id, SearchEvent::PlanningStarted)
         .await;
-    tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+
+    let (cfg, sec) = {
+        let c = state.config.read().await;
+        let s = state.secrets.read().await;
+        (c.clone(), s.clone())
+    };
+
+    let model_client = if cfg.model.enabled {
+        let base_url = cfg
+            .model
+            .base_url
+            .clone()
+            .unwrap_or_else(|| "http://localhost:11434/v1".to_string());
+        let model_name = cfg
+            .model
+            .model
+            .clone()
+            .unwrap_or_else(|| "gpt-4o-mini".to_string());
+        let embedding_model = cfg
+            .model
+            .embedding_model
+            .clone()
+            .unwrap_or_else(|| "text-embedding-3-small".to_string());
+        crate::model::ModelClient::new(
+            &base_url,
+            sec.openai_api_key.clone(),
+            &model_name,
+            &embedding_model,
+            std::time::Duration::from_millis(5000),
+        )
+        .ok()
+    } else {
+        None
+    };
+
+    let plan = crate::model::QueryPlanner::plan(&query, model_client.as_ref()).await;
+
     state
         .jobs
         .emit_event(&job_id, SearchEvent::PlanningCompleted)
@@ -474,7 +510,7 @@ async fn run_search_pipeline(state: Arc<AppState>, job_id: String, query: String
         .jobs
         .emit_event(&job_id, SearchEvent::LocalSearchStarted)
         .await;
-    let local_results = match state.store.search_fts(&query, 20).await {
+    let local_results = match state.store.search_fts(&plan.query, 20).await {
         Ok(res) => res,
         Err(e) => {
             state
@@ -498,16 +534,9 @@ async fn run_search_pipeline(state: Arc<AppState>, job_id: String, query: String
         )
         .await;
 
-    // 3. Connectors search concurrently if enabled
-    let (cfg, sec) = {
-        let c = state.config.read().await;
-        let s = state.secrets.read().await;
-        (c.clone(), s.clone())
-    };
-
     let search_req = SearchQuery {
-        query: query.clone(),
-        max_results: 10,
+        query: plan.query.clone(),
+        max_results: plan.max_remote_results.min(20),
         ..Default::default()
     };
 

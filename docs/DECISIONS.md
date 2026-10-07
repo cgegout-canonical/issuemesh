@@ -11,3 +11,4 @@ This document records deviations, decisions, and choices made during the build r
 | 2026-10-07 | 2 | `async-trait` dependency | Clean async trait definitions for `Connector` trait across dynamic dispatch. |
 | 2026-10-07 | 6 | First-run onboarding redirection | Redirect `/` to `/setup` when `onboarding_completed == false` to guarantee explicit initial setup sequence before search is used (`SPEC.md §8-9`). |
 | 2026-10-07 | 7 | SSE with broadcast channel and history playback | In-memory broadcast stream with history replay so clients connecting after job start immediately receive prior events before live streaming (`SPEC.md §14`). |
+| 2026-10-07 | 8 | Deterministic query planner fallback and bounds clamping | When model is unconfigured, unreachable, or returns invalid/out-of-bounds plan, the query planner deterministically extracts query tokens and clamps budgets to hard limits without failing the search request (`SPEC.md §16`, `§61`). |
