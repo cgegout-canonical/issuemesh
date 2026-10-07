@@ -8,3 +8,4 @@ This document records deviations, decisions, and choices made during the build r
 | 2026-10-07 | 1 | Rusqlite with `bundled` feature | Avoid system SQLite dependency for strict portability (`ISSUEMESH_BUILD_PROMPT.md §1`). |
 | 2026-10-07 | 1 | Reqwest with `default-features = false`, `rustls-tls` | Avoid system OpenSSL dependency for strict portability (`ISSUEMESH_BUILD_PROMPT.md §1`). |
 | 2026-10-07 | 1 | Embedded migrations in binary | Zero external runtime dependencies (`SPEC.md §4`). |
+| 2026-10-07 | 2 | `async-trait` dependency | Clean async trait definitions for `Connector` trait across dynamic dispatch. |

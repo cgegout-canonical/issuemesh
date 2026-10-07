@@ -1,4 +1,5 @@
 pub mod config;
+pub mod connectors;
 pub mod paths;
 pub mod store;
 pub mod util;

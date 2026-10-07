@@ -10,9 +10,9 @@ Environment:
 
 ## Stages
 
-stage 1 | in progress | Skeleton, config, paths, logging, migrations | pending
-stage 2 | todo | Read-only HTTP + connectors | pending
-stage 3 | todo | Object store + relations | pending
+stage 1 | done | Skeleton, config, paths, logging, migrations | 05ea3b8
+stage 2 | done | Read-only HTTP + connectors | d0a6bab
+stage 3 | in progress | Object store + relations | pending
 stage 4 | todo | FTS + traversal | pending
 stage 5 | todo | Axum + basic UI | pending
 stage 6 | todo | Wizard + Settings + Health | pending
