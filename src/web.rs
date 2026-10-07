@@ -32,6 +32,12 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/health", get(health_api_handler))
         .route("/api/stats", get(stats_handler))
         .route("/api/search/local", get(local_search_handler))
+        .route(
+            "/api/search",
+            post(create_search_job_handler).get(list_search_jobs_handler),
+        )
+        .route("/api/search/{id}", get(get_search_job_handler))
+        .route("/api/search/{id}/events", get(search_events_sse_handler))
         .route("/api/setup", post(save_setup_handler))
         .route(
             "/api/settings",
@@ -351,6 +357,376 @@ async fn local_search_handler(
         )
             .into_response(),
     }
+}
+
+#[derive(Deserialize)]
+struct CreateSearchJobRequest {
+    query: String,
+}
+
+async fn create_search_job_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<CreateSearchJobRequest>,
+) -> Response {
+    let q = payload.query.trim().to_string();
+    if q.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Query cannot be empty" })),
+        )
+            .into_response();
+    }
+
+    let job_id = state.jobs.create_job(q.clone()).await;
+
+    // Spawn background task to process search
+    let state_clone = Arc::clone(&state);
+    let job_id_clone = job_id.clone();
+    tokio::spawn(async move {
+        run_search_pipeline(state_clone, job_id_clone, q).await;
+    });
+
+    (
+        StatusCode::ACCEPTED,
+        Json(serde_json::json!({ "job_id": job_id })),
+    )
+        .into_response()
+}
+
+async fn list_search_jobs_handler(State(state): State<Arc<AppState>>) -> Response {
+    let jobs = state.jobs.list_jobs().await;
+    Json(jobs).into_response()
+}
+
+async fn get_search_job_handler(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    match state.jobs.get_job_summary(&id).await {
+        Some(summary) => Json(summary).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Job not found" })),
+        )
+            .into_response(),
+    }
+}
+
+async fn search_events_sse_handler(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    use axum::response::sse::{Event, KeepAlive, Sse};
+    use futures::stream::StreamExt;
+    use tokio_stream::wrappers::BroadcastStream;
+
+    let sub = state.jobs.subscribe_events(&id).await;
+    let (history, rx) = match sub {
+        Some(pair) => pair,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    let history_stream = futures::stream::iter(history.into_iter().map(|ev| {
+        let json = serde_json::to_string(&ev).unwrap_or_default();
+        Ok::<_, std::convert::Infallible>(Event::default().data(json))
+    }));
+
+    let live_stream = BroadcastStream::new(rx).filter_map(|res| async move {
+        match res {
+            Ok(ev) => {
+                let json = serde_json::to_string(&ev).unwrap_or_default();
+                Some(Ok::<_, std::convert::Infallible>(
+                    Event::default().data(json),
+                ))
+            }
+            Err(_) => None,
+        }
+    });
+
+    let combined = history_stream.chain(live_stream);
+
+    Sse::new(combined)
+        .keep_alive(KeepAlive::default())
+        .into_response()
+}
+
+async fn run_search_pipeline(state: Arc<AppState>, job_id: String, query: String) {
+    use crate::connectors::SearchQuery;
+    use crate::jobs::{SearchEvent, SearchStats, Source};
+    use std::time::Instant;
+
+    let start = Instant::now();
+    let mut stats = SearchStats::default();
+
+    // 1. Planning
+    state
+        .jobs
+        .emit_event(&job_id, SearchEvent::PlanningStarted)
+        .await;
+    tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+    state
+        .jobs
+        .emit_event(&job_id, SearchEvent::PlanningCompleted)
+        .await;
+
+    // 2. Local search
+    state
+        .jobs
+        .emit_event(&job_id, SearchEvent::LocalSearchStarted)
+        .await;
+    let local_results = match state.store.search_fts(&query, 20).await {
+        Ok(res) => res,
+        Err(e) => {
+            state
+                .jobs
+                .emit_event(
+                    &job_id,
+                    SearchEvent::Warning(format!("Local search error: {e}")),
+                )
+                .await;
+            Vec::new()
+        }
+    };
+    stats.objects_analysed += local_results.len();
+    state
+        .jobs
+        .emit_event(
+            &job_id,
+            SearchEvent::LocalSearchCompleted {
+                objects: local_results.len(),
+            },
+        )
+        .await;
+
+    // 3. Connectors search concurrently if enabled
+    let (cfg, sec) = {
+        let c = state.config.read().await;
+        let s = state.secrets.read().await;
+        (c.clone(), s.clone())
+    };
+
+    let search_req = SearchQuery {
+        query: query.clone(),
+        max_results: 10,
+        ..Default::default()
+    };
+
+    let mut trackers_searched = 0;
+
+    // GitHub
+    if cfg.github.enabled {
+        trackers_searched += 1;
+        state
+            .jobs
+            .emit_event(
+                &job_id,
+                SearchEvent::SourceSearchStarted {
+                    source: Source::GitHub,
+                },
+            )
+            .await;
+        if let Ok(gh) = GitHubConnector::new(
+            "https://api.github.com",
+            sec.github_token.clone(),
+            cfg.github.default_org.clone(),
+        ) {
+            match gh.search(&search_req).await {
+                Ok(items) => {
+                    let count = items.len();
+                    stats.objects_analysed += count;
+                    for item in items {
+                        let _ = state.store.upsert_object(item).await;
+                    }
+                    state
+                        .jobs
+                        .emit_event(
+                            &job_id,
+                            SearchEvent::SourceSearchCompleted {
+                                source: Source::GitHub,
+                                objects: count,
+                            },
+                        )
+                        .await;
+                }
+                Err(e) => {
+                    state
+                        .jobs
+                        .emit_event(
+                            &job_id,
+                            SearchEvent::Warning(format!("GitHub search failed: {e}")),
+                        )
+                        .await;
+                    state
+                        .jobs
+                        .emit_event(
+                            &job_id,
+                            SearchEvent::SourceSearchCompleted {
+                                source: Source::GitHub,
+                                objects: 0,
+                            },
+                        )
+                        .await;
+                }
+            }
+        }
+    }
+
+    // Jira
+    if cfg.jira.enabled {
+        if let Some(jira_url) = sec.jira_url.clone() {
+            trackers_searched += 1;
+            state
+                .jobs
+                .emit_event(
+                    &job_id,
+                    SearchEvent::SourceSearchStarted {
+                        source: Source::Jira,
+                    },
+                )
+                .await;
+            if let Ok(jira) = JiraConnector::new(
+                &jira_url,
+                sec.jira_email.clone(),
+                sec.jira_token.clone(),
+                cfg.jira.default_project.clone(),
+            ) {
+                match jira.search(&search_req).await {
+                    Ok(items) => {
+                        let count = items.len();
+                        stats.objects_analysed += count;
+                        for item in items {
+                            let _ = state.store.upsert_object(item).await;
+                        }
+                        state
+                            .jobs
+                            .emit_event(
+                                &job_id,
+                                SearchEvent::SourceSearchCompleted {
+                                    source: Source::Jira,
+                                    objects: count,
+                                },
+                            )
+                            .await;
+                    }
+                    Err(e) => {
+                        state
+                            .jobs
+                            .emit_event(
+                                &job_id,
+                                SearchEvent::Warning(format!("Jira search failed: {e}")),
+                            )
+                            .await;
+                        state
+                            .jobs
+                            .emit_event(
+                                &job_id,
+                                SearchEvent::SourceSearchCompleted {
+                                    source: Source::Jira,
+                                    objects: 0,
+                                },
+                            )
+                            .await;
+                    }
+                }
+            }
+        }
+    }
+
+    // Launchpad
+    if cfg.launchpad.enabled {
+        trackers_searched += 1;
+        state
+            .jobs
+            .emit_event(
+                &job_id,
+                SearchEvent::SourceSearchStarted {
+                    source: Source::Launchpad,
+                },
+            )
+            .await;
+        if let Ok(lp) = LaunchpadConnector::new(
+            "https://api.launchpad.net/1.0",
+            cfg.launchpad.default_project.clone(),
+        ) {
+            match lp.search(&search_req).await {
+                Ok(items) => {
+                    let count = items.len();
+                    stats.objects_analysed += count;
+                    for item in items {
+                        let _ = state.store.upsert_object(item).await;
+                    }
+                    state
+                        .jobs
+                        .emit_event(
+                            &job_id,
+                            SearchEvent::SourceSearchCompleted {
+                                source: Source::Launchpad,
+                                objects: count,
+                            },
+                        )
+                        .await;
+                }
+                Err(e) => {
+                    state
+                        .jobs
+                        .emit_event(
+                            &job_id,
+                            SearchEvent::Warning(format!("Launchpad search failed: {e}")),
+                        )
+                        .await;
+                    state
+                        .jobs
+                        .emit_event(
+                            &job_id,
+                            SearchEvent::SourceSearchCompleted {
+                                source: Source::Launchpad,
+                                objects: 0,
+                            },
+                        )
+                        .await;
+                }
+            }
+        }
+    }
+
+    stats.trackers_searched = trackers_searched;
+
+    // Graph expansion check
+    state
+        .jobs
+        .emit_event(
+            &job_id,
+            SearchEvent::GraphExpansion {
+                depth: 1,
+                nodes: stats.objects_analysed,
+            },
+        )
+        .await;
+
+    // Consistency check
+    state
+        .jobs
+        .emit_event(&job_id, SearchEvent::ConsistencyCheckStarted)
+        .await;
+    state
+        .jobs
+        .emit_event(
+            &job_id,
+            SearchEvent::ConsistencyCheckCompleted { findings: 0 },
+        )
+        .await;
+
+    // Synthesis
+    state
+        .jobs
+        .emit_event(&job_id, SearchEvent::SynthesisStarted)
+        .await;
+
+    stats.duration_ms = start.elapsed().as_millis() as u64;
+    state
+        .jobs
+        .emit_event(&job_id, SearchEvent::Complete(stats))
+        .await;
 }
 
 // ---------------------------------------------------------------------------

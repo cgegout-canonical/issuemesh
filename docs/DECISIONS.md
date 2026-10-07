@@ -10,3 +10,4 @@ This document records deviations, decisions, and choices made during the build r
 | 2026-10-07 | 1 | Embedded migrations in binary | Zero external runtime dependencies (`SPEC.md §4`). |
 | 2026-10-07 | 2 | `async-trait` dependency | Clean async trait definitions for `Connector` trait across dynamic dispatch. |
 | 2026-10-07 | 6 | First-run onboarding redirection | Redirect `/` to `/setup` when `onboarding_completed == false` to guarantee explicit initial setup sequence before search is used (`SPEC.md §8-9`). |
+| 2026-10-07 | 7 | SSE with broadcast channel and history playback | In-memory broadcast stream with history replay so clients connecting after job start immediately receive prior events before live streaming (`SPEC.md §14`). |

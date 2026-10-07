@@ -22,6 +22,7 @@ async fn setup_app_unonboarded() -> (axum::Router, AppState, tempfile::TempDir) 
         config: Arc::new(RwLock::new(config)),
         secrets: Arc::new(RwLock::new(secrets)),
         store,
+        jobs: issuemesh::jobs::JobManager::new(),
     };
 
     (build_router(state.clone()), state, tmp)

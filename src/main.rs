@@ -69,6 +69,7 @@ async fn main() -> Result<()> {
         config: Arc::new(RwLock::new(config.clone())),
         secrets: Arc::new(RwLock::new(secrets)),
         store,
+        jobs: issuemesh::jobs::JobManager::new(),
     };
 
     println!("IssueMesh 0.1.0");

@@ -1,5 +1,6 @@
 pub mod config;
 pub mod connectors;
+pub mod jobs;
 pub mod paths;
 pub mod store;
 pub mod util;
@@ -14,4 +15,5 @@ pub struct AppState {
     pub config: Arc<RwLock<config::Config>>,
     pub secrets: Arc<RwLock<config::Secrets>>,
     pub store: store::Store,
+    pub jobs: jobs::JobManager,
 }
