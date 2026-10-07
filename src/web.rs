@@ -1,14 +1,20 @@
 use axum::{
     extract::{Query, State},
     http::{header, StatusCode, Uri},
-    response::{Html, IntoResponse, Response},
-    routing::get,
+    response::{Html, IntoResponse, Redirect, Response},
+    routing::{get, post},
     Json, Router,
 };
 use rust_embed::RustEmbed;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::time::Instant;
 
+use crate::connectors::github::GitHubConnector;
+use crate::connectors::jira::JiraConnector;
+use crate::connectors::launchpad::LaunchpadConnector;
+use crate::connectors::Connector;
+use crate::util::mask_secret;
 use crate::AppState;
 
 #[derive(RustEmbed)]
@@ -17,19 +23,28 @@ struct Assets;
 
 pub fn build_router(state: AppState) -> Router {
     Router::new()
+        // Page routes
         .route("/", get(index_handler))
-        .route("/api/health", get(health_handler))
+        .route("/setup", get(setup_handler))
+        .route("/health", get(health_page_handler))
+        .route("/settings", get(settings_page_handler))
+        // API routes
+        .route("/api/health", get(health_api_handler))
         .route("/api/stats", get(stats_handler))
         .route("/api/search/local", get(local_search_handler))
+        .route("/api/setup", post(save_setup_handler))
+        .route(
+            "/api/settings",
+            get(get_settings_handler).post(save_settings_handler),
+        )
+        // Probe test routes
+        .route("/api/test/github", post(test_github_handler))
+        .route("/api/test/jira", post(test_jira_handler))
+        .route("/api/test/launchpad", post(test_launchpad_handler))
+        .route("/api/test/model", post(test_model_handler))
+        // Static assets
         .route("/static/{*file}", get(static_handler))
         .with_state(Arc::new(state))
-}
-
-async fn index_handler() -> impl IntoResponse {
-    match Assets::get("index.html") {
-        Some(content) => Html(content.data).into_response(),
-        None => (StatusCode::NOT_FOUND, "index.html not found").into_response(),
-    }
 }
 
 fn guess_mime(path: &str) -> &'static str {
@@ -61,27 +76,247 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
     }
 }
 
-async fn health_handler(State(state): State<Arc<AppState>>) -> Response {
-    let stats = state.store.get_stats().await;
-    match stats {
-        Ok(s) => Json(serde_json::json!({
-            "status": "healthy",
-            "version": env!("CARGO_PKG_VERSION"),
-            "datastore": {
-                "objects": s.object_count,
-                "relations": s.relation_count,
-            }
-        }))
-        .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "status": "unhealthy",
-                "error": e.to_string(),
-            })),
-        )
-            .into_response(),
+async fn index_handler(State(state): State<Arc<AppState>>) -> Response {
+    let completed = {
+        let cfg = state.config.read().await;
+        cfg.onboarding_completed
+    };
+
+    if !completed {
+        return Redirect::temporary("/setup").into_response();
     }
+
+    match Assets::get("index.html") {
+        Some(content) => Html(content.data).into_response(),
+        None => (StatusCode::NOT_FOUND, "index.html not found").into_response(),
+    }
+}
+
+async fn setup_handler() -> impl IntoResponse {
+    match Assets::get("setup.html") {
+        Some(content) => Html(content.data).into_response(),
+        None => (StatusCode::NOT_FOUND, "setup.html not found").into_response(),
+    }
+}
+
+async fn health_page_handler() -> impl IntoResponse {
+    match Assets::get("health.html") {
+        Some(content) => Html(content.data).into_response(),
+        None => (StatusCode::NOT_FOUND, "health.html not found").into_response(),
+    }
+}
+
+async fn settings_page_handler() -> impl IntoResponse {
+    match Assets::get("settings.html") {
+        Some(content) => Html(content.data).into_response(),
+        None => (StatusCode::NOT_FOUND, "settings.html not found").into_response(),
+    }
+}
+
+#[derive(Serialize)]
+pub struct SubsystemHealth {
+    pub enabled: bool,
+    pub ok: bool,
+    pub detail: String,
+    pub latency_ms: i64,
+    pub rate_limit_remaining: Option<i64>,
+}
+
+pub async fn run_live_probes(state: &AppState) -> serde_json::Value {
+    let (cfg, sec) = {
+        let c = state.config.read().await.clone();
+        let s = state.secrets.read().await.clone();
+        (c, s)
+    };
+
+    // 1. GitHub Probe
+    let gh_probe = if cfg.github.enabled {
+        let base_url = "https://api.github.com";
+        match GitHubConnector::new(
+            base_url,
+            sec.github_token.clone(),
+            cfg.github.default_org.clone(),
+        ) {
+            Ok(connector) => {
+                let h = connector.health().await;
+                SubsystemHealth {
+                    enabled: true,
+                    ok: h.ok,
+                    detail: h.detail,
+                    latency_ms: h.latency_ms,
+                    rate_limit_remaining: h.rate_limit_remaining,
+                }
+            }
+            Err(e) => SubsystemHealth {
+                enabled: true,
+                ok: false,
+                detail: format!("Initialization error: {e}"),
+                latency_ms: 0,
+                rate_limit_remaining: None,
+            },
+        }
+    } else {
+        SubsystemHealth {
+            enabled: false,
+            ok: true,
+            detail: "Connector disabled".to_string(),
+            latency_ms: 0,
+            rate_limit_remaining: None,
+        }
+    };
+
+    // 2. Jira Probe
+    let jira_probe = if cfg.jira.enabled {
+        if let Some(jira_url) = sec.jira_url.clone() {
+            match JiraConnector::new(
+                &jira_url,
+                sec.jira_email.clone(),
+                sec.jira_token.clone(),
+                cfg.jira.default_project.clone(),
+            ) {
+                Ok(connector) => {
+                    let h = connector.health().await;
+                    SubsystemHealth {
+                        enabled: true,
+                        ok: h.ok,
+                        detail: h.detail,
+                        latency_ms: h.latency_ms,
+                        rate_limit_remaining: h.rate_limit_remaining,
+                    }
+                }
+                Err(e) => SubsystemHealth {
+                    enabled: true,
+                    ok: false,
+                    detail: format!("Initialization error: {e}"),
+                    latency_ms: 0,
+                    rate_limit_remaining: None,
+                },
+            }
+        } else {
+            SubsystemHealth {
+                enabled: true,
+                ok: false,
+                detail: "Jira URL not configured".to_string(),
+                latency_ms: 0,
+                rate_limit_remaining: None,
+            }
+        }
+    } else {
+        SubsystemHealth {
+            enabled: false,
+            ok: true,
+            detail: "Connector disabled".to_string(),
+            latency_ms: 0,
+            rate_limit_remaining: None,
+        }
+    };
+
+    // 3. Launchpad Probe
+    let lp_probe = if cfg.launchpad.enabled {
+        let base_url = "https://api.launchpad.net/1.0";
+        match LaunchpadConnector::new(base_url, cfg.launchpad.default_project.clone()) {
+            Ok(connector) => {
+                let h = connector.health().await;
+                SubsystemHealth {
+                    enabled: true,
+                    ok: h.ok,
+                    detail: h.detail,
+                    latency_ms: h.latency_ms,
+                    rate_limit_remaining: None,
+                }
+            }
+            Err(e) => SubsystemHealth {
+                enabled: true,
+                ok: false,
+                detail: format!("Initialization error: {e}"),
+                latency_ms: 0,
+                rate_limit_remaining: None,
+            },
+        }
+    } else {
+        SubsystemHealth {
+            enabled: false,
+            ok: true,
+            detail: "Connector disabled".to_string(),
+            latency_ms: 0,
+            rate_limit_remaining: None,
+        }
+    };
+
+    // 4. Model Probe
+    let model_probe = if cfg.model.enabled {
+        let base_url = cfg
+            .model
+            .base_url
+            .clone()
+            .or_else(|| sec.openai_base_url.clone());
+        let api_key = sec.openai_api_key.clone();
+        let chat_model = cfg.model.model.clone().or_else(|| sec.openai_model.clone());
+        if let Some(url) = base_url {
+            let res =
+                probe_model_endpoint(&url, api_key.as_deref(), chat_model.as_deref(), None).await;
+            SubsystemHealth {
+                enabled: true,
+                ok: res.ok,
+                detail: res.detail,
+                latency_ms: res.latency_ms,
+                rate_limit_remaining: None,
+            }
+        } else {
+            SubsystemHealth {
+                enabled: true,
+                ok: false,
+                detail: "Model base URL not configured".to_string(),
+                latency_ms: 0,
+                rate_limit_remaining: None,
+            }
+        }
+    } else {
+        SubsystemHealth {
+            enabled: false,
+            ok: true,
+            detail: "Model integration disabled".to_string(),
+            latency_ms: 0,
+            rate_limit_remaining: None,
+        }
+    };
+
+    // 5. Database Probe
+    let t0 = Instant::now();
+    let db_res = state.store.get_stats().await;
+    let db_latency = t0.elapsed().as_millis() as i64;
+    let (db_ok, db_detail) = match db_res {
+        Ok(s) => (
+            true,
+            format!("{} objects, {} relations", s.object_count, s.relation_count),
+        ),
+        Err(e) => (false, format!("Database error: {e}")),
+    };
+
+    let db_probe = SubsystemHealth {
+        enabled: true,
+        ok: db_ok,
+        detail: db_detail,
+        latency_ms: db_latency,
+        rate_limit_remaining: None,
+    };
+
+    serde_json::json!({
+        "status": if db_probe.ok { "healthy" } else { "degraded" },
+        "version": env!("CARGO_PKG_VERSION"),
+        "subsystems": {
+            "database": db_probe,
+            "github": gh_probe,
+            "jira": jira_probe,
+            "launchpad": lp_probe,
+            "model": model_probe,
+        }
+    })
+}
+
+async fn health_api_handler(State(state): State<Arc<AppState>>) -> Response {
+    let report = run_live_probes(&state).await;
+    Json(report).into_response()
 }
 
 async fn stats_handler(State(state): State<Arc<AppState>>) -> Response {
@@ -116,4 +351,464 @@ async fn local_search_handler(
         )
             .into_response(),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Settings & Onboarding Form DTOs
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize, Serialize, Clone, Default)]
+pub struct GitHubForm {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    pub token: Option<String>,
+    pub default_org: Option<String>,
+    #[serde(default)]
+    pub default_repos: Vec<String>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Default)]
+pub struct JiraForm {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    pub url: Option<String>,
+    pub email: Option<String>,
+    pub token: Option<String>,
+    pub default_project: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Default)]
+pub struct LaunchpadForm {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    pub default_project: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Default)]
+pub struct ModelForm {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    pub base_url: Option<String>,
+    pub api_key: Option<String>,
+    pub chat_model: Option<String>,
+    pub embedding_model: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Default)]
+pub struct SearchForm {
+    pub graph_depth: Option<u8>,
+    pub max_graph_nodes: Option<usize>,
+    pub max_deep_reads: Option<usize>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Deserialize, Serialize, Clone, Default)]
+pub struct SettingsPayload {
+    pub github: GitHubForm,
+    pub jira: JiraForm,
+    pub launchpad: LaunchpadForm,
+    pub model: ModelForm,
+    pub search: SearchForm,
+}
+
+async fn get_settings_handler(State(state): State<Arc<AppState>>) -> Response {
+    let cfg = state.config.read().await.clone();
+    let sec = state.secrets.read().await.clone();
+
+    let masked_gh = sec.github_token.as_ref().map(|t| mask_secret(t));
+    let masked_jira = sec.jira_token.as_ref().map(|t| mask_secret(t));
+    let masked_model = sec.openai_api_key.as_ref().map(|t| mask_secret(t));
+
+    Json(serde_json::json!({
+        "config": cfg,
+        "masked_secrets": {
+            "github_token": masked_gh,
+            "jira_token": masked_jira,
+            "openai_api_key": masked_model,
+        },
+        "secrets_meta": {
+            "jira_url": sec.jira_url,
+            "jira_email": sec.jira_email,
+            "openai_base_url": sec.openai_base_url,
+            "openai_model": sec.openai_model,
+            "openai_embedding_model": sec.openai_embedding_model,
+        }
+    }))
+    .into_response()
+}
+
+async fn save_settings_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<SettingsPayload>,
+) -> Response {
+    apply_settings_update(&state, payload, false).await
+}
+
+async fn save_setup_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<SettingsPayload>,
+) -> Response {
+    apply_settings_update(&state, payload, true).await
+}
+
+async fn apply_settings_update(
+    state: &AppState,
+    payload: SettingsPayload,
+    complete_onboarding: bool,
+) -> Response {
+    // 1. Update config
+    {
+        let mut cfg = state.config.write().await;
+        if complete_onboarding {
+            cfg.onboarding_completed = true;
+        }
+
+        cfg.github.enabled = payload.github.enabled;
+        cfg.github.default_org = payload.github.default_org;
+        cfg.github.default_repos = payload.github.default_repos;
+
+        cfg.jira.enabled = payload.jira.enabled;
+        cfg.jira.default_project = payload.jira.default_project;
+
+        cfg.launchpad.enabled = payload.launchpad.enabled;
+        cfg.launchpad.default_project = payload.launchpad.default_project;
+
+        cfg.model.enabled = payload.model.enabled;
+        if payload.model.base_url.is_some() {
+            cfg.model.base_url = payload.model.base_url.clone();
+        }
+        if payload.model.chat_model.is_some() {
+            cfg.model.model = payload.model.chat_model.clone();
+        }
+        if payload.model.embedding_model.is_some() {
+            cfg.model.embedding_model = payload.model.embedding_model.clone();
+        }
+
+        if let Some(d) = payload.search.graph_depth {
+            cfg.search.graph_depth = d;
+        }
+        if let Some(n) = payload.search.max_graph_nodes {
+            cfg.search.max_graph_nodes = n;
+        }
+        if let Some(r) = payload.search.max_deep_reads {
+            cfg.search.max_deep_reads = r;
+        }
+
+        if let Err(e) = cfg.save(&state.paths.config_file) {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "ok": false, "error": format!("Failed to save config: {e}") })),
+            )
+                .into_response();
+        }
+    }
+
+    // 2. Update secrets
+    {
+        let mut sec = state.secrets.write().await;
+
+        if let Some(t) = payload.github.token {
+            if !t.is_empty() {
+                sec.github_token = Some(t);
+            }
+        }
+
+        if let Some(u) = payload.jira.url {
+            if !u.is_empty() {
+                sec.jira_url = Some(u);
+            }
+        }
+        if let Some(e) = payload.jira.email {
+            if !e.is_empty() {
+                sec.jira_email = Some(e);
+            }
+        }
+        if let Some(t) = payload.jira.token {
+            if !t.is_empty() {
+                sec.jira_token = Some(t);
+            }
+        }
+
+        if let Some(b) = payload.model.base_url {
+            if !b.is_empty() {
+                sec.openai_base_url = Some(b);
+            }
+        }
+        if let Some(k) = payload.model.api_key {
+            if !k.is_empty() {
+                sec.openai_api_key = Some(k);
+            }
+        }
+        if let Some(m) = payload.model.chat_model {
+            if !m.is_empty() {
+                sec.openai_model = Some(m);
+            }
+        }
+        if let Some(em) = payload.model.embedding_model {
+            if !em.is_empty() {
+                sec.openai_embedding_model = Some(em);
+            }
+        }
+
+        if let Err(e) = sec.save_to_file(&state.paths.secrets_file) {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "ok": false, "error": format!("Failed to save secrets: {e}") })),
+            )
+                .into_response();
+        }
+    }
+
+    Json(serde_json::json!({ "ok": true })).into_response()
+}
+
+// ---------------------------------------------------------------------------
+// Test probe endpoints
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct GitHubTestRequest {
+    token: Option<String>,
+}
+
+async fn test_github_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<GitHubTestRequest>,
+) -> Response {
+    let token = payload.token.or_else(|| {
+        let sec = state.secrets.try_read().ok()?;
+        sec.github_token.clone()
+    });
+
+    let base_url = "https://api.github.com";
+    match GitHubConnector::new(base_url, token, None) {
+        Ok(connector) => {
+            let h = connector.health().await;
+            Json(serde_json::json!({
+                "ok": h.ok,
+                "detail": h.detail,
+                "latency_ms": h.latency_ms,
+                "rate_limit_remaining": h.rate_limit_remaining,
+            }))
+            .into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "ok": false, "detail": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct JiraTestRequest {
+    url: Option<String>,
+    email: Option<String>,
+    token: Option<String>,
+}
+
+async fn test_jira_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<JiraTestRequest>,
+) -> Response {
+    let (url, email, token) = {
+        let sec = state.secrets.read().await;
+        let u = payload.url.or_else(|| sec.jira_url.clone());
+        let e = payload.email.or_else(|| sec.jira_email.clone());
+        let t = payload.token.or_else(|| sec.jira_token.clone());
+        (u, e, t)
+    };
+
+    let url = match url {
+        Some(u) if !u.is_empty() => u,
+        _ => {
+            return Json(serde_json::json!({
+                "ok": false,
+                "detail": "Jira URL is required for testing"
+            }))
+            .into_response();
+        }
+    };
+
+    match JiraConnector::new(&url, email, token, None) {
+        Ok(connector) => {
+            let h = connector.health().await;
+            Json(serde_json::json!({
+                "ok": h.ok,
+                "detail": h.detail,
+                "latency_ms": h.latency_ms,
+            }))
+            .into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "ok": false, "detail": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct LaunchpadTestRequest {
+    default_project: Option<String>,
+}
+
+async fn test_launchpad_handler(
+    State(_state): State<Arc<AppState>>,
+    Json(payload): Json<LaunchpadTestRequest>,
+) -> Response {
+    let base_url = "https://api.launchpad.net/1.0";
+    match LaunchpadConnector::new(base_url, payload.default_project) {
+        Ok(connector) => {
+            let h = connector.health().await;
+            Json(serde_json::json!({
+                "ok": h.ok,
+                "detail": h.detail,
+                "latency_ms": h.latency_ms,
+            }))
+            .into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "ok": false, "detail": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct ModelTestRequest {
+    base_url: Option<String>,
+    api_key: Option<String>,
+    chat_model: Option<String>,
+    embed_model: Option<String>,
+}
+
+pub struct ModelProbeResult {
+    pub ok: bool,
+    pub detail: String,
+    pub chat_model: Option<String>,
+    pub embedding_model: Option<String>,
+    pub latency_ms: i64,
+}
+
+pub async fn probe_model_endpoint(
+    base_url: &str,
+    api_key: Option<&str>,
+    chat_model: Option<&str>,
+    embed_model: Option<&str>,
+) -> ModelProbeResult {
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return ModelProbeResult {
+                ok: false,
+                detail: format!("Failed to build HTTP client: {e}"),
+                chat_model: None,
+                embedding_model: None,
+                latency_ms: 0,
+            };
+        }
+    };
+
+    let trimmed = base_url.trim_end_matches('/');
+    let models_url = format!("{trimmed}/models");
+
+    let t0 = Instant::now();
+    let mut req = client.get(&models_url);
+    if let Some(key) = api_key {
+        if !key.is_empty() {
+            req = req.bearer_auth(key);
+        }
+    }
+
+    match req.send().await {
+        Ok(res) => {
+            let latency_ms = t0.elapsed().as_millis() as i64;
+            if res.status().is_success() {
+                ModelProbeResult {
+                    ok: true,
+                    detail: format!("Model endpoint reachable (HTTP {})", res.status()),
+                    chat_model: chat_model.map(|s| s.to_string()),
+                    embedding_model: embed_model.map(|s| s.to_string()),
+                    latency_ms,
+                }
+            } else {
+                let status = res.status();
+                let err_text = res.text().await.unwrap_or_default();
+                ModelProbeResult {
+                    ok: false,
+                    detail: format!("HTTP {status}: {err_text}"),
+                    chat_model: None,
+                    embedding_model: None,
+                    latency_ms,
+                }
+            }
+        }
+        Err(e) => ModelProbeResult {
+            ok: false,
+            detail: format!("Connection failed: {e}"),
+            chat_model: None,
+            embedding_model: None,
+            latency_ms: t0.elapsed().as_millis() as i64,
+        },
+    }
+}
+
+async fn test_model_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<ModelTestRequest>,
+) -> Response {
+    let (base_url, api_key, chat_model, embed_model) = {
+        let sec = state.secrets.read().await;
+        let cfg = state.config.read().await;
+        let u = payload
+            .base_url
+            .or_else(|| cfg.model.base_url.clone())
+            .or_else(|| sec.openai_base_url.clone());
+        let k = payload.api_key.or_else(|| sec.openai_api_key.clone());
+        let m = payload
+            .chat_model
+            .or_else(|| cfg.model.model.clone())
+            .or_else(|| sec.openai_model.clone());
+        let em = payload
+            .embed_model
+            .or_else(|| cfg.model.embedding_model.clone())
+            .or_else(|| sec.openai_embedding_model.clone());
+        (u, k, m, em)
+    };
+
+    let base_url = match base_url {
+        Some(u) if !u.is_empty() => u,
+        _ => {
+            return Json(serde_json::json!({
+                "ok": false,
+                "detail": "Model base URL is required"
+            }))
+            .into_response();
+        }
+    };
+
+    let result = probe_model_endpoint(
+        &base_url,
+        api_key.as_deref(),
+        chat_model.as_deref(),
+        embed_model.as_deref(),
+    )
+    .await;
+
+    Json(serde_json::json!({
+        "ok": result.ok,
+        "detail": result.detail,
+        "chat_model": result.chat_model,
+        "embedding_model": result.embedding_model,
+        "latency_ms": result.latency_ms,
+    }))
+    .into_response()
 }

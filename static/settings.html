@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IssueMesh - Settings</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .settings-sec { margin-bottom: 2rem; }
+        .form-group { margin-bottom: 1.25rem; }
+        .form-group label { display: block; font-weight: 600; margin-bottom: 0.35rem; font-size: 0.9rem; }
+        .form-group input[type="text"], .form-group input[type="password"] {
+            width: 100%; padding: 0.6rem 0.8rem; border: 1px solid var(--color-border-grey); font-family: inherit; font-size: 0.95rem; border-radius: 2px;
+        }
+        .form-group input:focus { outline: none; border-color: var(--color-orange); }
+        .form-hint { font-size: 0.8rem; color: var(--color-muted-text); margin-top: 0.3rem; }
+        .btn-row { display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem; }
+        .alert-box { padding: 0.75rem 1rem; border-radius: 2px; margin-bottom: 1.5rem; display: none; }
+        .alert-success { background: #eef9ee; border: 1px solid #38B44A; color: #1e7e34; }
+        .alert-error { background: #fdf2f2; border: 1px solid #C7162B; color: #a71d2a; }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/" class="brand">
+            <span class="brand-dot"></span>
+            IssueMesh
+        </a>
+        <nav>
+            <a href="/">Search</a>
+            <a href="/memory">Memory</a>
+            <a href="/sources">Sources</a>
+            <a href="/health">Health</a>
+            <a href="/settings" class="active">Settings</a>
+        </nav>
+        <div class="status-badge">
+            <span class="dot dot-healthy"></span>
+            <span>Settings</span>
+        </div>
+    </header>
+
+    <main class="container" style="max-width: 800px;">
+        <div style="margin-bottom: 1.5rem;">
+            <h1>Settings & Preferences</h1>
+            <p style="color: var(--color-muted-text); margin-top: 0.25rem;">Manage connectors, models, search budgets, and datastore configuration.</p>
+        </div>
+
+        <div id="save-alert" class="alert-box"></div>
+
+        <!-- GitHub -->
+        <div class="card settings-sec">
+            <div class="card-title">GitHub Configuration</div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="gh-enabled"> Enable GitHub connector
+                </label>
+            </div>
+            <div class="form-group">
+                <label for="gh-token">GitHub Token</label>
+                <input type="password" id="gh-token" placeholder="Leave empty to keep existing token">
+                <div class="form-hint" id="gh-token-hint">Current: not set</div>
+            </div>
+            <div class="form-group">
+                <label for="gh-org">Default Organisation</label>
+                <input type="text" id="gh-org" placeholder="e.g. canonical">
+            </div>
+            <div class="form-group">
+                <label for="gh-repos">Default Repositories (comma-separated)</label>
+                <input type="text" id="gh-repos" placeholder="canonical/snapcraft, canonical/juju">
+            </div>
+        </div>
+
+        <!-- Jira -->
+        <div class="card settings-sec">
+            <div class="card-title">Jira Configuration</div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="jira-enabled"> Enable Jira connector
+                </label>
+            </div>
+            <div class="form-group">
+                <label for="jira-url">Jira Instance URL</label>
+                <input type="text" id="jira-url" placeholder="https://canonical.atlassian.net">
+            </div>
+            <div class="form-group">
+                <label for="jira-email">Account Email</label>
+                <input type="text" id="jira-email" placeholder="user@canonical.com">
+            </div>
+            <div class="form-group">
+                <label for="jira-token">API Token</label>
+                <input type="password" id="jira-token" placeholder="Leave empty to keep existing token">
+                <div class="form-hint" id="jira-token-hint">Current: not set</div>
+            </div>
+            <div class="form-group">
+                <label for="jira-project">Default Project</label>
+                <input type="text" id="jira-project" placeholder="e.g. OPEN">
+            </div>
+        </div>
+
+        <!-- Launchpad -->
+        <div class="card settings-sec">
+            <div class="card-title">Launchpad Configuration</div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="lp-enabled"> Enable Launchpad connector
+                </label>
+            </div>
+            <div class="form-group">
+                <label for="lp-project">Default Project / Ubuntu package</label>
+                <input type="text" id="lp-project" placeholder="e.g. ubuntu or subiquity">
+            </div>
+        </div>
+
+        <!-- Model -->
+        <div class="card settings-sec">
+            <div class="card-title">Model Endpoint (OpenAI-Compatible)</div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="model-enabled"> Enable AI Reasoning & Synthesis
+                </label>
+            </div>
+            <div class="form-group">
+                <label for="model-base-url">Base URL</label>
+                <input type="text" id="model-base-url" placeholder="https://api.openai.com/v1">
+            </div>
+            <div class="form-group">
+                <label for="model-api-key">API Key</label>
+                <input type="password" id="model-api-key" placeholder="Leave empty to keep existing key">
+                <div class="form-hint" id="model-key-hint">Current: not set</div>
+            </div>
+            <div class="form-group">
+                <label for="model-chat">Chat / Reasoning Model</label>
+                <input type="text" id="model-chat" placeholder="gpt-4o">
+            </div>
+            <div class="form-group">
+                <label for="model-embed">Embedding Model</label>
+                <input type="text" id="model-embed" placeholder="text-embedding-3-small">
+            </div>
+        </div>
+
+        <!-- Search Budgets -->
+        <div class="card settings-sec">
+            <div class="card-title">Search Defaults & Budgets</div>
+            <div class="form-group">
+                <label for="graph-depth">Graph Traversal Depth</label>
+                <input type="text" id="graph-depth" value="2">
+            </div>
+            <div class="form-group">
+                <label for="max-nodes">Maximum Graph Nodes</label>
+                <input type="text" id="max-nodes" value="100">
+            </div>
+            <div class="form-group">
+                <label for="max-reads">Maximum Deep Reads</label>
+                <input type="text" id="max-reads" value="30">
+            </div>
+        </div>
+
+        <div class="btn-row">
+            <button class="btn btn-primary" id="btn-save" onclick="saveSettings()">Save Configuration</button>
+        </div>
+    </main>
+
+    <script>
+        async function loadSettings() {
+            try {
+                const resp = await fetch('/api/settings');
+                const data = await resp.json();
+
+                // GitHub
+                document.getElementById('gh-enabled').checked = data.config.github.enabled;
+                document.getElementById('gh-org').value = data.config.github.default_org || '';
+                document.getElementById('gh-repos').value = (data.config.github.default_repos || []).join(', ');
+                if (data.masked_secrets.github_token) {
+                    document.getElementById('gh-token-hint').textContent = `Current: ${data.masked_secrets.github_token}`;
+                }
+
+                // Jira
+                document.getElementById('jira-enabled').checked = data.config.jira.enabled;
+                document.getElementById('jira-url').value = data.secrets_meta.jira_url || '';
+                document.getElementById('jira-email').value = data.secrets_meta.jira_email || '';
+                document.getElementById('jira-project').value = data.config.jira.default_project || '';
+                if (data.masked_secrets.jira_token) {
+                    document.getElementById('jira-token-hint').textContent = `Current: ${data.masked_secrets.jira_token}`;
+                }
+
+                // Launchpad
+                document.getElementById('lp-enabled').checked = data.config.launchpad.enabled;
+                document.getElementById('lp-project').value = data.config.launchpad.default_project || '';
+
+                // Model
+                document.getElementById('model-enabled').checked = data.config.model.enabled;
+                document.getElementById('model-base-url').value = data.config.model.base_url || data.secrets_meta.openai_base_url || '';
+                document.getElementById('model-chat').value = data.config.model.model || data.secrets_meta.openai_model || '';
+                document.getElementById('model-embed').value = data.config.model.embedding_model || data.secrets_meta.openai_embedding_model || '';
+                if (data.masked_secrets.openai_api_key) {
+                    document.getElementById('model-key-hint').textContent = `Current: ${data.masked_secrets.openai_api_key}`;
+                }
+
+                // Search
+                document.getElementById('graph-depth').value = data.config.search.graph_depth;
+                document.getElementById('max-nodes').value = data.config.search.max_graph_nodes;
+                document.getElementById('max-reads').value = data.config.search.max_deep_reads;
+            } catch (e) {
+                showAlert(`Error loading settings: ${e.message}`, false);
+            }
+        }
+
+        async function saveSettings() {
+            const btn = document.getElementById('btn-save');
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+
+            const reposInput = document.getElementById('gh-repos').value.trim();
+            const repos = reposInput ? reposInput.split(',').map(s => s.trim()).filter(s => s.length > 0) : [];
+
+            const payload = {
+                github: {
+                    enabled: document.getElementById('gh-enabled').checked,
+                    token: document.getElementById('gh-token').value.trim() || null,
+                    default_org: document.getElementById('gh-org').value.trim() || null,
+                    default_repos: repos
+                },
+                jira: {
+                    enabled: document.getElementById('jira-enabled').checked,
+                    url: document.getElementById('jira-url').value.trim() || null,
+                    email: document.getElementById('jira-email').value.trim() || null,
+                    token: document.getElementById('jira-token').value.trim() || null,
+                    default_project: document.getElementById('jira-project').value.trim() || null
+                },
+                launchpad: {
+                    enabled: document.getElementById('lp-enabled').checked,
+                    default_project: document.getElementById('lp-project').value.trim() || null
+                },
+                model: {
+                    enabled: document.getElementById('model-enabled').checked,
+                    base_url: document.getElementById('model-base-url').value.trim() || null,
+                    api_key: document.getElementById('model-api-key').value.trim() || null,
+                    chat_model: document.getElementById('model-chat').value.trim() || null,
+                    embedding_model: document.getElementById('model-embed').value.trim() || null
+                },
+                search: {
+                    graph_depth: parseInt(document.getElementById('graph-depth').value, 10) || 2,
+                    max_graph_nodes: parseInt(document.getElementById('max-nodes').value, 10) || 100,
+                    max_deep_reads: parseInt(document.getElementById('max-reads').value, 10) || 30
+                }
+            };
+
+            try {
+                const resp = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const res = await resp.json();
+                if (resp.ok && res.ok) {
+                    showAlert('Settings saved successfully.', true);
+                    loadSettings();
+                } else {
+                    showAlert(`Failed to save settings: ${res.error || 'Unknown error'}`, false);
+                }
+            } catch (e) {
+                showAlert(`Save failed: ${e.message}`, false);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Save Configuration';
+            }
+        }
+
+        function showAlert(msg, isSuccess) {
+            const box = document.getElementById('save-alert');
+            box.style.display = 'block';
+            box.className = `alert-box ${isSuccess ? 'alert-success' : 'alert-error'}`;
+            box.textContent = msg;
+            if (isSuccess) {
+                setTimeout(() => { box.style.display = 'none'; }, 4000);
+            }
+        }
+
+        loadSettings();
+    </script>
+</body>
+</html>

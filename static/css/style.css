@@ -200,7 +200,8 @@ nav a.active {
     border-radius: 50%;
 }
 .dot-healthy { background-color: var(--color-green); }
-.dot-failed { background-color: var(--color-red); }
+.dot-failed, .dot-unhealthy { background-color: var(--color-red); }
+.dot-idle { background-color: var(--color-mid-grey); }
 
 pre, code {
     font-family: var(--font-mono);

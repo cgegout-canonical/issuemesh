@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IssueMesh - Onboarding Setup</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .wizard-step { display: none; }
+        .wizard-step.active { display: block; }
+        .step-indicator { display: flex; justify-content: space-between; margin-bottom: 2rem; border-bottom: 1px solid var(--color-border-grey); padding-bottom: 1rem; }
+        .step-num { font-size: 0.85rem; font-weight: 600; color: var(--color-muted-text); }
+        .step-num.active { color: var(--color-orange); }
+        .form-group { margin-bottom: 1.25rem; }
+        .form-group label { display: block; font-weight: 600; margin-bottom: 0.35rem; font-size: 0.9rem; }
+        .form-group input[type="text"], .form-group input[type="password"] {
+            width: 100%; padding: 0.6rem 0.8rem; border: 1px solid var(--color-border-grey); font-family: inherit; font-size: 0.95rem; border-radius: 2px;
+        }
+        .form-group input:focus { outline: none; border-color: var(--color-orange); }
+        .form-hint { font-size: 0.8rem; color: var(--color-muted-text); margin-top: 0.3rem; }
+        .btn-row { display: flex; justify-content: space-between; margin-top: 2rem; }
+        .probe-result { margin-top: 1rem; padding: 0.75rem 1rem; border-radius: 2px; font-family: var(--font-mono); font-size: 0.85rem; display: none; }
+        .probe-success { background: #eef9ee; border: 1px solid #38B44A; color: #1e7e34; }
+        .probe-error { background: #fdf2f2; border: 1px solid #C7162B; color: #a71d2a; }
+        .review-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        .review-table th, .review-table td { padding: 0.75rem; text-align: left; border-bottom: 1px solid var(--color-border-grey); }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/" class="brand">
+            <span class="brand-dot"></span>
+            IssueMesh
+        </a>
+        <div class="status-badge">
+            <span class="dot dot-healthy"></span>
+            <span>First-Run Setup</span>
+        </div>
+    </header>
+
+    <main class="container" style="max-width: 760px;">
+        <div class="step-indicator" id="step-nav">
+            <span class="step-num active" id="badge-1">1. Welcome</span>
+            <span class="step-num" id="badge-2">2. GitHub</span>
+            <span class="step-num" id="badge-3">3. Jira</span>
+            <span class="step-num" id="badge-4">4. Launchpad</span>
+            <span class="step-num" id="badge-5">5. Model</span>
+            <span class="step-num" id="badge-6">6. Memory</span>
+            <span class="step-num" id="badge-7">7. Defaults</span>
+            <span class="step-num" id="badge-8">8. Review</span>
+        </div>
+
+        <!-- Step 1: Welcome -->
+        <div class="card wizard-step active" id="step-1">
+            <div class="card-title">Welcome to IssueMesh</div>
+            <p style="margin: 1rem 0; font-size: 1.1rem; line-height: 1.6;">
+                IssueMesh searches and connects engineering issues across GitHub, Jira and Launchpad.
+            </p>
+            <ul style="margin-left: 1.5rem; margin-bottom: 1.5rem; line-height: 1.8; color: var(--color-muted-text);">
+                <li><strong>Local-only application:</strong> Runs entirely on your workstation or private server</li>
+                <li><strong>Read-only tracker access:</strong> Never modifies, closes, comments, or deletes tracker objects</li>
+                <li><strong>Local embedded datastore:</strong> SQLite database with full-text search and graph relationship memory</li>
+            </ul>
+            <div class="btn-row" style="justify-content: flex-end;">
+                <button class="btn btn-primary" onclick="goToStep(2)">Get started &rarr;</button>
+            </div>
+        </div>
+
+        <!-- Step 2: GitHub -->
+        <div class="card wizard-step" id="step-2">
+            <div class="card-title">GitHub Configuration</div>
+            <p style="margin: 0.5rem 0 1.25rem 0; color: var(--color-muted-text);">
+                IssueMesh uses read-only personal access tokens to query repository issues, discussions, and pull requests.
+            </p>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="gh-enabled" checked> Enable GitHub connector
+                </label>
+            </div>
+            <div class="form-group">
+                <label for="gh-token">GitHub Token (Classic or Fine-Grained)</label>
+                <input type="password" id="gh-token" placeholder="ghp_•••• or github_pat_••••">
+                <div class="form-hint">Requires read-only scopes: <code>repo</code> or <code>public_repo</code>, <code>read:org</code>.</div>
+            </div>
+            <div class="form-group">
+                <label for="gh-org">Default Organisation (optional)</label>
+                <input type="text" id="gh-org" placeholder="e.g. canonical">
+            </div>
+            <div class="form-group">
+                <label for="gh-repos">Default Repositories (optional, comma-separated)</label>
+                <input type="text" id="gh-repos" placeholder="canonical/snapcraft, canonical/juju">
+            </div>
+            <button class="btn btn-secondary" onclick="testGitHub()">Test connection</button>
+            <div id="gh-probe" class="probe-result"></div>
+            <div class="btn-row">
+                <button class="btn btn-secondary" onclick="goToStep(1)">&larr; Back</button>
+                <button class="btn btn-primary" onclick="goToStep(3)">Continue &rarr;</button>
+            </div>
+        </div>
+
+        <!-- Step 3: Jira -->
+        <div class="card wizard-step" id="step-3">
+            <div class="card-title">Jira Configuration</div>
+            <p style="margin: 0.5rem 0 1.25rem 0; color: var(--color-muted-text);">
+                Connect to Atlassian Jira Cloud or Server using API tokens.
+            </p>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="jira-enabled" checked> Enable Jira connector
+                </label>
+            </div>
+            <div class="form-group">
+                <label for="jira-url">Jira Instance URL</label>
+                <input type="text" id="jira-url" placeholder="https://canonical.atlassian.net">
+            </div>
+            <div class="form-group">
+                <label for="jira-email">Account Email</label>
+                <input type="text" id="jira-email" placeholder="engineer@canonical.com">
+            </div>
+            <div class="form-group">
+                <label for="jira-token">API Token</label>
+                <input type="password" id="jira-token" placeholder="••••••••••••••••">
+            </div>
+            <div class="form-group">
+                <label for="jira-project">Default Project (optional)</label>
+                <input type="text" id="jira-project" placeholder="e.g. OPEN">
+            </div>
+            <button class="btn btn-secondary" onclick="testJira()">Test connection</button>
+            <div id="jira-probe" class="probe-result"></div>
+            <div class="btn-row">
+                <button class="btn btn-secondary" onclick="goToStep(2)">&larr; Back</button>
+                <button class="btn btn-primary" onclick="goToStep(4)">Continue &rarr;</button>
+            </div>
+        </div>
+
+        <!-- Step 4: Launchpad -->
+        <div class="card wizard-step" id="step-4">
+            <div class="card-title">Launchpad Configuration</div>
+            <p style="margin: 0.5rem 0 1.25rem 0; color: var(--color-muted-text);">
+                Public Launchpad bugs and Ubuntu packages can be searched without credentials.
+            </p>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="lp-enabled" checked> Enable Launchpad connector
+                </label>
+            </div>
+            <div class="form-group">
+                <label for="lp-project">Default Project / Ubuntu package (optional)</label>
+                <input type="text" id="lp-project" placeholder="e.g. ubuntu or subiquity">
+            </div>
+            <button class="btn btn-secondary" onclick="testLaunchpad()">Test connection</button>
+            <div id="lp-probe" class="probe-result"></div>
+            <div class="btn-row">
+                <button class="btn btn-secondary" onclick="goToStep(3)">&larr; Back</button>
+                <button class="btn btn-primary" onclick="goToStep(5)">Continue &rarr;</button>
+            </div>
+        </div>
+
+        <!-- Step 5: Model -->
+        <div class="card wizard-step" id="step-5">
+            <div class="card-title">Model Endpoint (OpenAI-Compatible)</div>
+            <p style="margin: 0.5rem 0 1.25rem 0; color: var(--color-muted-text);">
+                Configure an OpenAI-compatible endpoint for reasoning, graph traversal planning, and evidence synthesis.
+            </p>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="model-enabled" checked> Enable AI Synthesis & Planning
+                </label>
+            </div>
+            <div class="form-group">
+                <label for="model-base-url">Base URL</label>
+                <input type="text" id="model-base-url" placeholder="https://api.openai.com/v1">
+                <div class="form-hint">Supports OpenAI, local vLLM, Ollama, Azure OpenAI, or any gateway.</div>
+            </div>
+            <div class="form-group">
+                <label for="model-api-key">API Key (optional for local servers)</label>
+                <input type="password" id="model-api-key" placeholder="sk-••••••••">
+            </div>
+            <div class="form-group">
+                <label for="model-chat">Chat / Reasoning Model Name</label>
+                <input type="text" id="model-chat" placeholder="gpt-4o">
+            </div>
+            <div class="form-group">
+                <label for="model-embed">Embedding Model Name (optional)</label>
+                <input type="text" id="model-embed" placeholder="text-embedding-3-small">
+            </div>
+            <button class="btn btn-secondary" onclick="testModel()">Test model</button>
+            <div id="model-probe" class="probe-result"></div>
+            <div class="btn-row">
+                <button class="btn btn-secondary" onclick="goToStep(4)">&larr; Back</button>
+                <button class="btn btn-primary" onclick="goToStep(6)">Continue &rarr;</button>
+            </div>
+        </div>
+
+        <!-- Step 6: Memory -->
+        <div class="card wizard-step" id="step-6">
+            <div class="card-title">Local Memory & Storage</div>
+            <p style="margin: 0.5rem 0 1.25rem 0; color: var(--color-muted-text);">
+                IssueMesh stores previously retrieved tracker objects and their relationships locally to make future searches faster and deeper.
+            </p>
+            <div class="form-group">
+                <label>Datastore Directory</label>
+                <input type="text" id="datastore-path" readonly value="~/.issuemesh/issuemesh.db">
+                <div class="form-hint">Embedded SQLite database with WAL mode and FTS5 indexing. Local only.</div>
+            </div>
+            <div class="form-group">
+                <label>Initial Estimated Disk Use</label>
+                <div style="font-family: var(--font-mono); font-size: 0.9rem; color: var(--color-muted-text);">Minimal (~1 MB)</div>
+            </div>
+            <div class="btn-row">
+                <button class="btn btn-secondary" onclick="goToStep(5)">&larr; Back</button>
+                <button class="btn btn-primary" onclick="goToStep(7)">Continue &rarr;</button>
+            </div>
+        </div>
+
+        <!-- Step 7: Search Defaults -->
+        <div class="card wizard-step" id="step-7">
+            <div class="card-title">Search Defaults & Budgets</div>
+            <p style="margin: 0.5rem 0 1.25rem 0; color: var(--color-muted-text);">
+                Configure graph expansion depth and safety boundaries for tracker lookups.
+            </p>
+            <div class="form-group">
+                <label for="graph-depth">Graph Traversal Depth</label>
+                <input type="text" id="graph-depth" value="2">
+                <div class="form-hint">Number of relation hops to explore (default: 2)</div>
+            </div>
+            <div class="form-group">
+                <label for="max-nodes">Maximum Graph Nodes</label>
+                <input type="text" id="max-nodes" value="100">
+                <div class="form-hint">Budget limit for explored related objects (default: 100)</div>
+            </div>
+            <div class="form-group">
+                <label for="max-reads">Maximum Deep Reads</label>
+                <input type="text" id="max-reads" value="30">
+                <div class="form-hint">Maximum full-body object fetches per search (default: 30)</div>
+            </div>
+            <div class="btn-row">
+                <button class="btn btn-secondary" onclick="goToStep(6)">&larr; Back</button>
+                <button class="btn btn-primary" onclick="goToStep(8); populateReview();">Continue &rarr;</button>
+            </div>
+        </div>
+
+        <!-- Step 8: Review -->
+        <div class="card wizard-step" id="step-8">
+            <div class="card-title">Review & Finish Setup</div>
+            <p style="margin: 0.5rem 0 1.25rem 0; color: var(--color-muted-text);">
+                Verify your configuration. Once submitted, IssueMesh will persist your settings and launch the search console.
+            </p>
+            <table class="review-table">
+                <tbody>
+                    <tr><th>GitHub</th><td id="rev-gh">Not configured</td></tr>
+                    <tr><th>Jira</th><td id="rev-jira">Not configured</td></tr>
+                    <tr><th>Launchpad</th><td id="rev-lp">Enabled</td></tr>
+                    <tr><th>Model Endpoint</th><td id="rev-model">Not configured</td></tr>
+                    <tr><th>Datastore</th><td id="rev-store">~/.issuemesh/issuemesh.db</td></tr>
+                    <tr><th>Search Budget</th><td id="rev-budget">Depth: 2, Max nodes: 100</td></tr>
+                </tbody>
+            </table>
+            <div id="finish-err" class="probe-result probe-error" style="margin-top: 1rem;"></div>
+            <div class="btn-row">
+                <button class="btn btn-secondary" onclick="goToStep(7)">&larr; Back</button>
+                <button class="btn btn-primary" id="btn-finish" onclick="finishSetup()">Start IssueMesh &rarr;</button>
+            </div>
+        </div>
+    </main>
+
+    <script src="/static/js/setup.js"></script>
+</body>
+</html>

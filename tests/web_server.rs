@@ -13,7 +13,8 @@ async fn setup_app() -> axum::Router {
     let paths = Paths::resolve(Some(tmp.path()), None).unwrap();
     paths.ensure_dirs().unwrap();
 
-    let config = Config::load_or_default(&paths.config_file).unwrap();
+    let mut config = Config::load_or_default(&paths.config_file).unwrap();
+    config.onboarding_completed = true;
     let secrets = Secrets::default();
     let store = Store::open_in_memory().unwrap();
 

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IssueMesh - System Health</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .health-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-top: 1.5rem; }
+        .probe-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
+        .probe-status { display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 600; font-size: 0.9rem; }
+        .probe-latency { font-family: var(--font-mono); font-size: 0.85rem; color: var(--color-muted-text); }
+        .probe-detail { font-size: 0.9rem; color: var(--color-muted-text); word-break: break-word; line-height: 1.5; }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/" class="brand">
+            <span class="brand-dot"></span>
+            IssueMesh
+        </a>
+        <nav>
+            <a href="/">Search</a>
+            <a href="/memory">Memory</a>
+            <a href="/sources">Sources</a>
+            <a href="/health" class="active">Health</a>
+            <a href="/settings">Settings</a>
+        </nav>
+        <div id="overall-badge" class="status-badge">
+            <span class="dot dot-healthy"></span>
+            <span id="overall-text">Checking...</span>
+        </div>
+    </header>
+
+    <main class="container">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <div>
+                <h1>Operational Health</h1>
+                <p style="color: var(--color-muted-text); margin-top: 0.25rem;">Live connectivity and probe diagnostics across all configured subsystems</p>
+            </div>
+            <button class="btn btn-secondary" onclick="loadHealth()">Refresh Probes</button>
+        </div>
+
+        <div class="health-grid" id="health-cards">
+            <div class="card"><p>Running live probes...</p></div>
+        </div>
+    </main>
+
+    <script>
+        async function loadHealth() {
+            const container = document.getElementById('health-cards');
+            const badge = document.getElementById('overall-badge');
+            const badgeText = document.getElementById('overall-text');
+
+            try {
+                const res = await fetch('/api/health');
+                const data = await res.json();
+                
+                let allOk = true;
+                let html = '';
+
+                for (const [key, probe] of Object.entries(data.subsystems || {})) {
+                    if (!probe.ok && probe.enabled) allOk = false;
+                    const dotClass = !probe.enabled ? 'dot-idle' : (probe.ok ? 'dot-healthy' : 'dot-unhealthy');
+                    const statusText = !probe.enabled ? 'Disabled' : (probe.ok ? 'Healthy' : 'Error');
+
+                    html += `
+                        <div class="card">
+                            <div class="probe-header">
+                                <h3 style="text-transform: capitalize; font-size: 1.1rem;">${key}</h3>
+                                <div class="probe-status">
+                                    <span class="dot ${dotClass}"></span>
+                                    <span>${statusText}</span>
+                                </div>
+                            </div>
+                            <div style="margin-bottom: 0.5rem;" class="probe-latency">Latency: ${probe.latency_ms} ms</div>
+                            <div class="probe-detail">${escapeHtml(probe.detail)}</div>
+                            ${probe.rate_limit_remaining !== undefined && probe.rate_limit_remaining !== null ? `<div style="margin-top: 0.5rem; font-size: 0.85rem; color: var(--color-muted-text);">Rate limit remaining: ${probe.rate_limit_remaining}</div>` : ''}
+                        </div>
+                    `;
+                }
+
+                container.innerHTML = html;
+                badge.querySelector('.dot').className = `dot ${allOk ? 'dot-healthy' : 'dot-unhealthy'}`;
+                badgeText.textContent = allOk ? 'Healthy' : 'Degraded';
+            } catch (e) {
+                container.innerHTML = `<div class="card"><p style="color: var(--color-red);">Failed to fetch health: ${escapeHtml(e.message)}</p></div>`;
+            }
+        }
+
+        function escapeHtml(s) {
+            return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        loadHealth();
+    </script>
+</body>
+</html>
