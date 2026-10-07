@@ -17,7 +17,7 @@ stage 4 | done | FTS + traversal | 4964b86
 stage 5 | done | Axum + basic UI | 681439a
 stage 6 | done | Wizard + Settings + Health | a65fbfd
 stage 7 | done | Jobs + SSE | b173427
-stage 8 | done | Model client + planner | pending
+stage 8 | done | Model client + planner | ee8daf8
 stage 9 | in progress | Embeddings + hybrid ranking | pending
 stage 10 | todo | Deep search + consistency | pending
 stage 11 | todo | Results UI, Memory, Sources, run page | pending
