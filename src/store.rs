@@ -654,6 +654,291 @@ impl Store {
         })
         .await
     }
+
+    /// Full-text search over objects using FTS5 with snippet generation and ranking
+    pub async fn search_fts(&self, query: &str, limit: usize) -> Result<Vec<FtsSearchResult>> {
+        let q = query.trim().to_string();
+        if q.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        self.call(move |conn| {
+            // Sanitize query tokens for FTS5: strip punctuation that breaks fts5 syntax
+            let clean_tokens: Vec<String> = q
+                .split_whitespace()
+                .map(|token| {
+                    let cleaned: String = token.chars().filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-').collect();
+                    if cleaned.is_empty() {
+                        String::new()
+                    } else {
+                        format!("\"{}\"", cleaned)
+                    }
+                })
+                .filter(|s| !s.is_empty())
+                .collect();
+
+            if clean_tokens.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            let fts_query = clean_tokens.join(" ");
+
+            let mut stmt = conn.prepare(
+                "SELECT f.object_key,
+                        snippet(object_fts, 1, '<b>', '</b>', '...', 16) AS title_snip,
+                        snippet(object_fts, 3, '<b>', '</b>', '...', 32) AS body_snip,
+                        bm25(object_fts) AS rank,
+                        o.title, o.snippet, o.body, o.url, o.container, o.author, o.state,
+                        o.source, o.object_type, o.external_id, o.created_at, o.updated_at, o.native_json
+                 FROM object_fts f
+                 JOIN objects o ON o.object_key = f.object_key
+                 WHERE object_fts MATCH ?1
+                 ORDER BY rank ASC
+                 LIMIT ?2",
+            )?;
+
+            let rows = stmt.query_map(rusqlite::params![&fts_query, limit as i64], |row| {
+                let obj_key: String = row.get(0)?;
+                let title_snip: String = row.get(1)?;
+                let body_snip: String = row.get(2)?;
+                let rank: f64 = row.get(3)?;
+
+                let title: String = row.get(4)?;
+                let snippet: String = row.get(5)?;
+                let body: Option<String> = row.get(6)?;
+                let url: String = row.get(7)?;
+                let container: String = row.get(8)?;
+                let author: String = row.get(9)?;
+                let state: String = row.get(10)?;
+                let source: String = row.get(11)?;
+                let object_type: String = row.get(12)?;
+                let external_id: String = row.get(13)?;
+                let created_at: Option<String> = row.get(14)?;
+                let updated_at: Option<String> = row.get(15)?;
+                let native_str: String = row.get(16)?;
+                let native = serde_json::from_str(&native_str).unwrap_or_default();
+
+                let r#ref = crate::connectors::ObjectRef::from_key(&obj_key)
+                    .unwrap_or_else(|| crate::connectors::ObjectRef::new(source, object_type, external_id));
+
+                let evidence = crate::connectors::Evidence {
+                    r#ref,
+                    title,
+                    snippet,
+                    body,
+                    url,
+                    container,
+                    author,
+                    created_at,
+                    updated_at,
+                    state,
+                    native,
+                };
+
+                let best_snippet = if !body_snip.is_empty() {
+                    body_snip
+                } else if !title_snip.is_empty() {
+                    title_snip
+                } else {
+                    evidence.snippet.clone()
+                };
+
+                Ok(FtsSearchResult {
+                    evidence,
+                    snippet: best_snippet,
+                    rank,
+                })
+            })?;
+
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    /// Bounded multi-hop graph traversal with cycle detection and node budget.
+    pub async fn traverse_graph(
+        &self,
+        seeds: Vec<crate::connectors::ObjectRef>,
+        depth: usize,
+        max_nodes: usize,
+    ) -> Result<GraphResult> {
+        self.call(move |conn| {
+            use std::collections::{HashSet, VecDeque};
+
+            let mut visited = HashSet::new();
+            let mut queue = VecDeque::new();
+            let mut nodes = Vec::new();
+            let mut edges = Vec::new();
+            let mut budget_exhausted = false;
+
+            for seed in seeds {
+                let k = seed.to_key();
+                if visited.insert(k.clone()) {
+                    queue.push_back((k, 0usize));
+                }
+            }
+
+            while let Some((curr_key, curr_depth)) = queue.pop_front() {
+                // Fetch Evidence if present in objects table
+                let obj_opt: Option<crate::connectors::Evidence> = conn
+                    .prepare(
+                        "SELECT object_key, source, object_type, external_id,
+                                title, snippet, body, url, container, author,
+                                state, created_at, updated_at, native_json
+                         FROM objects WHERE object_key = ?1",
+                    )?
+                    .query_row(rusqlite::params![&curr_key], |row| {
+                        let obj_key: String = row.get(0)?;
+                        let source: String = row.get(1)?;
+                        let object_type: String = row.get(2)?;
+                        let external_id: String = row.get(3)?;
+                        let title: String = row.get(4)?;
+                        let snippet: String = row.get(5)?;
+                        let body: Option<String> = row.get(6)?;
+                        let url: String = row.get(7)?;
+                        let container: String = row.get(8)?;
+                        let author: String = row.get(9)?;
+                        let state: String = row.get(10)?;
+                        let created_at: Option<String> = row.get(11)?;
+                        let updated_at: Option<String> = row.get(12)?;
+                        let native_str: String = row.get(13)?;
+                        let native = serde_json::from_str(&native_str).unwrap_or_default();
+
+                        let r#ref = crate::connectors::ObjectRef::from_key(&obj_key)
+                            .unwrap_or_else(|| {
+                                crate::connectors::ObjectRef::new(source, object_type, external_id)
+                            });
+
+                        Ok(crate::connectors::Evidence {
+                            r#ref,
+                            title,
+                            snippet,
+                            body,
+                            url,
+                            container,
+                            author,
+                            created_at,
+                            updated_at,
+                            state,
+                            native,
+                        })
+                    })
+                    .ok();
+
+                let curr_ref =
+                    crate::connectors::ObjectRef::from_key(&curr_key).unwrap_or_else(|| {
+                        crate::connectors::ObjectRef::new("unknown", "unknown", &curr_key)
+                    });
+
+                nodes.push(GraphNode {
+                    r#ref: curr_ref,
+                    evidence: obj_opt,
+                    depth: curr_depth,
+                });
+
+                if nodes.len() >= max_nodes {
+                    if !queue.is_empty() {
+                        budget_exhausted = true;
+                    }
+                    break;
+                }
+
+                if curr_depth >= depth {
+                    continue;
+                }
+
+                // Query adjacent edges
+                let mut edge_stmt = conn.prepare(
+                    "SELECT from_key, to_key, relation_type, detected_by, confidence
+                     FROM relations
+                     WHERE from_key = ?1 OR to_key = ?1",
+                )?;
+
+                let adjacent_edges = edge_stmt.query_map(rusqlite::params![&curr_key], |row| {
+                    let from_k: String = row.get(0)?;
+                    let to_k: String = row.get(1)?;
+                    let relation_type: String = row.get(2)?;
+                    let detected_by: String = row.get(3)?;
+                    let confidence: f64 = row.get(4)?;
+
+                    let from =
+                        crate::connectors::ObjectRef::from_key(&from_k).unwrap_or_else(|| {
+                            crate::connectors::ObjectRef::new("unknown", "unknown", &from_k)
+                        });
+                    let to = crate::connectors::ObjectRef::from_key(&to_k).unwrap_or_else(|| {
+                        crate::connectors::ObjectRef::new("unknown", "unknown", &to_k)
+                    });
+
+                    Ok(crate::connectors::Relation {
+                        from,
+                        to,
+                        relation_type,
+                        detected_by,
+                        confidence: confidence as f32,
+                    })
+                })?;
+
+                for rel_res in adjacent_edges {
+                    let rel = rel_res?;
+                    let neighbor_key = if rel.from.to_key() == curr_key {
+                        rel.to.to_key()
+                    } else {
+                        rel.from.to_key()
+                    };
+
+                    edges.push(rel);
+
+                    if !visited.contains(&neighbor_key) {
+                        if nodes.len() + queue.len() >= max_nodes {
+                            budget_exhausted = true;
+                        } else {
+                            visited.insert(neighbor_key.clone());
+                            queue.push_back((neighbor_key, curr_depth + 1));
+                        }
+                    }
+                }
+            }
+
+            // Deduplicate collected edges
+            let mut edge_set = HashSet::new();
+            edges.retain(|e| {
+                let key = format!("{}:{}:{}", e.from.to_key(), e.to.to_key(), e.relation_type);
+                edge_set.insert(key)
+            });
+
+            Ok(GraphResult {
+                nodes,
+                edges,
+                budget_exhausted,
+            })
+        })
+        .await
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FtsSearchResult {
+    pub evidence: crate::connectors::Evidence,
+    pub snippet: String,
+    pub rank: f64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GraphNode {
+    pub r#ref: crate::connectors::ObjectRef,
+    pub evidence: Option<crate::connectors::Evidence>,
+    pub depth: usize,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GraphResult {
+    pub nodes: Vec<GraphNode>,
+    pub edges: Vec<crate::connectors::Relation>,
+    pub budget_exhausted: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
