@@ -215,6 +215,454 @@ impl Store {
         .await
         .context("Task join error during DB call")?
     }
+
+    /// Computes deterministic SHA-256 content hash of normalized evidence
+    pub fn compute_content_hash(evidence: &crate::connectors::Evidence) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(evidence.title.as_bytes());
+        hasher.update(b"\0");
+        hasher.update(evidence.snippet.as_bytes());
+        hasher.update(b"\0");
+        if let Some(ref b) = evidence.body {
+            hasher.update(b.as_bytes());
+        }
+        hasher.update(b"\0");
+        hasher.update(evidence.state.as_bytes());
+        hasher.update(b"\0");
+        if let Ok(native_str) = serde_json::to_string(&evidence.native) {
+            hasher.update(native_str.as_bytes());
+        }
+        format!("{:x}", hasher.finalize())
+    }
+
+    /// Upserts an Evidence record into `objects`.
+    /// If content changed, saves a snapshot to `revisions`.
+    /// Also marks any existing unresolved_ref for this object as resolved (1).
+    pub async fn upsert_object(&self, evidence: crate::connectors::Evidence) -> Result<bool> {
+        let content_hash = Self::compute_content_hash(&evidence);
+        let now = chrono::Utc::now().to_rfc3339();
+
+        self.call(move |conn| {
+            let tx = conn.transaction()?;
+            let obj_key = evidence.r#ref.to_key();
+
+            // Check if existing object exists and get previous content hash
+            let prev_hash: Option<String> = tx
+                .query_row(
+                    "SELECT content_hash FROM objects WHERE object_key = ?1",
+                    rusqlite::params![&obj_key],
+                    |row| row.get(0),
+                )
+                .ok();
+
+            let native_json = serde_json::to_string(&evidence.native).unwrap_or_else(|_| "{}".to_string());
+            let has_changed = match prev_hash {
+                Some(ref h) => h != &content_hash,
+                None => true,
+            };
+
+            if has_changed {
+                // Save to revisions if updating an existing record
+                if prev_hash.is_some() {
+                    tx.execute(
+                        "INSERT INTO revisions (object_key, content_hash, captured_at, title, snippet, body, state, native_json)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                        rusqlite::params![
+                            &obj_key,
+                            &content_hash,
+                            &now,
+                            &evidence.title,
+                            &evidence.snippet,
+                            &evidence.body,
+                            &evidence.state,
+                            &native_json,
+                        ],
+                    )?;
+                }
+
+                // Insert or update objects
+                tx.execute(
+                    "INSERT INTO objects (
+                        object_key, source, object_type, external_id,
+                        title, snippet, body, url, container, author,
+                        state, created_at, updated_at, native_json,
+                        content_hash, last_fetched_at, first_seen_at
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+                    ON CONFLICT(object_key) DO UPDATE SET
+                        title = excluded.title,
+                        snippet = excluded.snippet,
+                        body = excluded.body,
+                        url = excluded.url,
+                        container = excluded.container,
+                        author = excluded.author,
+                        state = excluded.state,
+                        updated_at = excluded.updated_at,
+                        native_json = excluded.native_json,
+                        content_hash = excluded.content_hash,
+                        last_fetched_at = excluded.last_fetched_at",
+                    rusqlite::params![
+                        &obj_key,
+                        &evidence.r#ref.source,
+                        &evidence.r#ref.r#type,
+                        &evidence.r#ref.id,
+                        &evidence.title,
+                        &evidence.snippet,
+                        &evidence.body,
+                        &evidence.url,
+                        &evidence.container,
+                        &evidence.author,
+                        &evidence.state,
+                        &evidence.created_at,
+                        &evidence.updated_at,
+                        &native_json,
+                        &content_hash,
+                        &now,
+                        &now,
+                    ],
+                )?;
+
+                // Update or insert into object_fts
+                tx.execute(
+                    "DELETE FROM object_fts WHERE object_key = ?1",
+                    rusqlite::params![&obj_key],
+                )?;
+                tx.execute(
+                    "INSERT INTO object_fts (object_key, title, snippet, body, container, author)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    rusqlite::params![
+                        &obj_key,
+                        &evidence.title,
+                        &evidence.snippet,
+                        &evidence.body.as_deref().unwrap_or(""),
+                        &evidence.container,
+                        &evidence.author,
+                    ],
+                )?;
+            } else {
+                // Just update last_fetched_at
+                tx.execute(
+                    "UPDATE objects SET last_fetched_at = ?1 WHERE object_key = ?2",
+                    rusqlite::params![&now, &obj_key],
+                )?;
+            }
+
+            // Mark any pending unresolved_refs matching this object_key as resolved
+            tx.execute(
+                "UPDATE unresolved_refs SET resolved = 1 WHERE ref_key = ?1",
+                rusqlite::params![&obj_key],
+            )?;
+
+            tx.commit()?;
+            Ok(has_changed)
+        })
+        .await
+    }
+
+    /// Retrieve an object by its canonical ObjectRef
+    pub async fn get_object(
+        &self,
+        r: &crate::connectors::ObjectRef,
+    ) -> Result<Option<crate::connectors::Evidence>> {
+        let key = r.to_key();
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT object_key, source, object_type, external_id,
+                        title, snippet, body, url, container, author,
+                        state, created_at, updated_at, native_json
+                 FROM objects WHERE object_key = ?1",
+            )?;
+
+            let res = stmt.query_row(rusqlite::params![&key], |row| {
+                let obj_key: String = row.get(0)?;
+                let source: String = row.get(1)?;
+                let object_type: String = row.get(2)?;
+                let external_id: String = row.get(3)?;
+                let title: String = row.get(4)?;
+                let snippet: String = row.get(5)?;
+                let body: Option<String> = row.get(6)?;
+                let url: String = row.get(7)?;
+                let container: String = row.get(8)?;
+                let author: String = row.get(9)?;
+                let state: String = row.get(10)?;
+                let created_at: Option<String> = row.get(11)?;
+                let updated_at: Option<String> = row.get(12)?;
+                let native_str: String = row.get(13)?;
+                let native = serde_json::from_str(&native_str).unwrap_or_default();
+
+                let obj_ref =
+                    crate::connectors::ObjectRef::from_key(&obj_key).unwrap_or_else(|| {
+                        crate::connectors::ObjectRef::new(source, object_type, external_id)
+                    });
+
+                Ok(crate::connectors::Evidence {
+                    r#ref: obj_ref,
+                    title,
+                    snippet,
+                    body,
+                    url,
+                    container,
+                    author,
+                    created_at,
+                    updated_at,
+                    state,
+                    native,
+                })
+            });
+
+            match res {
+                Ok(ev) => Ok(Some(ev)),
+                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                Err(e) => Err(anyhow::anyhow!(e)),
+            }
+        })
+        .await
+    }
+
+    /// Upserts a relation between two objects.
+    pub async fn insert_relation(&self, rel: crate::connectors::Relation) -> Result<()> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.call(move |conn| {
+            conn.execute(
+                "INSERT INTO relations (from_key, to_key, relation_type, detected_by, confidence, first_seen_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT(from_key, to_key, relation_type) DO UPDATE SET
+                    confidence = MAX(relations.confidence, excluded.confidence),
+                    detected_by = excluded.detected_by",
+                rusqlite::params![
+                    &rel.from.to_key(),
+                    &rel.to.to_key(),
+                    &rel.relation_type,
+                    &rel.detected_by,
+                    rel.confidence,
+                    &now,
+                ],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Batch upsert relations
+    pub async fn insert_relations(&self, rels: Vec<crate::connectors::Relation>) -> Result<()> {
+        if rels.is_empty() {
+            return Ok(());
+        }
+        let now = chrono::Utc::now().to_rfc3339();
+        self.call(move |conn| {
+            let tx = conn.transaction()?;
+            for rel in rels {
+                tx.execute(
+                    "INSERT INTO relations (from_key, to_key, relation_type, detected_by, confidence, first_seen_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                     ON CONFLICT(from_key, to_key, relation_type) DO UPDATE SET
+                        confidence = MAX(relations.confidence, excluded.confidence),
+                        detected_by = excluded.detected_by",
+                    rusqlite::params![
+                        &rel.from.to_key(),
+                        &rel.to.to_key(),
+                        &rel.relation_type,
+                        &rel.detected_by,
+                        rel.confidence,
+                        &now,
+                    ],
+                )?;
+            }
+            tx.commit()?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Get outgoing and incoming relations for an object key
+    pub async fn get_relations_for_key(
+        &self,
+        key: &str,
+    ) -> Result<Vec<crate::connectors::Relation>> {
+        let k = key.to_string();
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT from_key, to_key, relation_type, detected_by, confidence
+                 FROM relations
+                 WHERE from_key = ?1 OR to_key = ?1",
+            )?;
+
+            let rows = stmt.query_map(rusqlite::params![&k], |row| {
+                let from_k: String = row.get(0)?;
+                let to_k: String = row.get(1)?;
+                let relation_type: String = row.get(2)?;
+                let detected_by: String = row.get(3)?;
+                let confidence: f64 = row.get(4)?;
+
+                let from = crate::connectors::ObjectRef::from_key(&from_k).unwrap_or_else(|| {
+                    crate::connectors::ObjectRef::new("unknown", "unknown", &from_k)
+                });
+                let to = crate::connectors::ObjectRef::from_key(&to_k).unwrap_or_else(|| {
+                    crate::connectors::ObjectRef::new("unknown", "unknown", &to_k)
+                });
+
+                Ok(crate::connectors::Relation {
+                    from,
+                    to,
+                    relation_type,
+                    detected_by,
+                    confidence: confidence as f32,
+                })
+            })?;
+
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    /// Record an unresolved reference discovered during parsing
+    pub async fn record_unresolved_ref(
+        &self,
+        target: &crate::connectors::ObjectRef,
+        discovered_from_key: &str,
+    ) -> Result<()> {
+        let ref_key = target.to_key();
+        let source = target.source.clone();
+        let target_id = target.id.clone();
+        let from_key = discovered_from_key.to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        self.call(move |conn| {
+            // Only insert if object does not already exist in objects table
+            let exists: bool = conn
+                .query_row(
+                    "SELECT 1 FROM objects WHERE object_key = ?1",
+                    rusqlite::params![&ref_key],
+                    |_| Ok(true),
+                )
+                .unwrap_or(false);
+
+            if !exists {
+                conn.execute(
+                    "INSERT OR IGNORE INTO unresolved_refs (ref_key, source, target_id, discovered_from_key, first_seen_at, resolved)
+                     VALUES (?1, ?2, ?3, ?4, ?5, 0)",
+                    rusqlite::params![&ref_key, &source, &target_id, &from_key, &now],
+                )?;
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    /// Retrieve pending unresolved references up to limit
+    pub async fn get_unresolved_refs(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<(crate::connectors::ObjectRef, String)>> {
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT ref_key, source, target_id, discovered_from_key
+                 FROM unresolved_refs
+                 WHERE resolved = 0
+                 LIMIT ?1",
+            )?;
+
+            let rows = stmt.query_map(rusqlite::params![limit as i64], |row| {
+                let ref_key: String = row.get(0)?;
+                let source: String = row.get(1)?;
+                let target_id: String = row.get(2)?;
+                let discovered_from: String = row.get(3)?;
+
+                let obj_ref =
+                    crate::connectors::ObjectRef::from_key(&ref_key).unwrap_or_else(|| {
+                        crate::connectors::ObjectRef::new(source, "unknown", target_id)
+                    });
+
+                Ok((obj_ref, discovered_from))
+            })?;
+
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    /// Record API audit event
+    pub async fn record_api_audit(
+        &self,
+        source: &str,
+        method: &str,
+        path: &str,
+        status_code: u16,
+        latency_ms: i64,
+    ) -> Result<()> {
+        let source = source.to_string();
+        let method = method.to_string();
+        let path = path.to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        self.call(move |conn| {
+            conn.execute(
+                "INSERT INTO api_audit (source, method, path, status_code, latency_ms, called_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![
+                    &source,
+                    &method,
+                    &path,
+                    status_code as i64,
+                    latency_ms,
+                    &now
+                ],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Datastore summary statistics
+    pub async fn get_stats(&self) -> Result<DatastoreStats> {
+        self.call(|conn| {
+            let object_count: i64 = conn
+                .query_row("SELECT COUNT(*) FROM objects", [], |r| r.get(0))
+                .unwrap_or(0);
+            let relation_count: i64 = conn
+                .query_row("SELECT COUNT(*) FROM relations", [], |r| r.get(0))
+                .unwrap_or(0);
+            let revision_count: i64 = conn
+                .query_row("SELECT COUNT(*) FROM revisions", [], |r| r.get(0))
+                .unwrap_or(0);
+            let unresolved_count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM unresolved_refs WHERE resolved = 0",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            let audit_count: i64 = conn
+                .query_row("SELECT COUNT(*) FROM api_audit", [], |r| r.get(0))
+                .unwrap_or(0);
+
+            Ok(DatastoreStats {
+                object_count,
+                relation_count,
+                revision_count,
+                unresolved_count,
+                audit_count,
+            })
+        })
+        .await
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DatastoreStats {
+    pub object_count: i64,
+    pub relation_count: i64,
+    pub revision_count: i64,
+    pub unresolved_count: i64,
+    pub audit_count: i64,
 }
 
 #[cfg(test)]

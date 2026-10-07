@@ -133,6 +133,57 @@ pub fn adf_text(v: &serde_json::Value) -> String {
     out.trim().to_string()
 }
 
+/// Cross-system identifier extractor: finds Jira keys, Launchpad bug IDs, and GitHub issue/PR refs.
+/// Skips false positives and self references.
+pub fn extract_references(
+    text: &str,
+    self_ref: Option<&crate::connectors::ObjectRef>,
+) -> Vec<crate::connectors::ObjectRef> {
+    use std::collections::HashSet;
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+
+    // 1. Jira
+    for cap in PAT_JIRA.captures_iter(text) {
+        if let Some(m) = cap.get(1) {
+            let key = m.as_str();
+            if is_jira_key(key) {
+                let r = crate::connectors::ObjectRef::new("jira", "issue", key);
+                if self_ref != Some(&r) && seen.insert(r.to_key()) {
+                    out.push(r);
+                }
+            }
+        }
+    }
+
+    // 2. Launchpad
+    for cap in PAT_LP.captures_iter(text) {
+        if let Some(m) = cap.get(1) {
+            let bug_id = m.as_str();
+            let r = crate::connectors::ObjectRef::new("launchpad", "bug", bug_id);
+            if self_ref != Some(&r) && seen.insert(r.to_key()) {
+                out.push(r);
+            }
+        }
+    }
+
+    // 3. GitHub
+    for cap in PAT_GH.captures_iter(text) {
+        if let (Some(repo), Some(num)) = (cap.get(1), cap.get(2)) {
+            let repo_str = repo.as_str();
+            let num_str = num.as_str();
+            // Store as issue by default for cross-ref candidate
+            let id = format!("{}#{}", repo_str, num_str);
+            let r = crate::connectors::ObjectRef::new("github", "issue", id);
+            if self_ref != Some(&r) && seen.insert(r.to_key()) {
+                out.push(r);
+            }
+        }
+    }
+
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,5 +287,19 @@ mod tests {
         let flat = adf_text(&doc);
         assert!(flat.contains("Hello @cgegout! Look at https://bugs.launchpad.net/bugs/12345"));
         assert!(flat.contains("let x = 42;"));
+    }
+
+    #[test]
+    fn test_extract_references() {
+        let text = "Related to OPEN-4679 and LP#2167315. Also see canonical/project#912 and ignore CVE-2023-1234 or self OPEN-100.";
+        let self_ref = crate::connectors::ObjectRef::new("jira", "issue", "OPEN-100");
+        let refs = extract_references(text, Some(&self_ref));
+
+        let keys: Vec<String> = refs.into_iter().map(|r| r.to_key()).collect();
+        assert!(keys.contains(&"jira:issue:OPEN-4679".to_string()));
+        assert!(keys.contains(&"launchpad:bug:2167315".to_string()));
+        assert!(keys.contains(&"github:issue:canonical/project#912".to_string()));
+        assert!(!keys.contains(&"jira:issue:CVE-2023".to_string()));
+        assert!(!keys.contains(&"jira:issue:OPEN-100".to_string()));
     }
 }
