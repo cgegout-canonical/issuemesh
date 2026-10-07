@@ -18,7 +18,7 @@ stage 5 | done | Axum + basic UI | 681439a
 stage 6 | done | Wizard + Settings + Health | a65fbfd
 stage 7 | done | Jobs + SSE | b173427
 stage 8 | done | Model client + planner | ee8daf8
-stage 9 | in progress | Embeddings + hybrid ranking | pending
-stage 10 | todo | Deep search + consistency | pending
+stage 9 | done | Embeddings + hybrid ranking | 7279885
+stage 10 | done | Deep search + consistency | pending
 stage 11 | todo | Results UI, Memory, Sources, run page | pending
 stage 12 | todo | Hardening, release, e2e | pending

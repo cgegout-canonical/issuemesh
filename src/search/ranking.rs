@@ -101,3 +101,48 @@ pub struct RankedEvidence {
     pub graph_score: f32,
     pub freshness_score: f32,
 }
+
+/// Helper function to rank a collection of candidate objects given scores and depths
+pub fn rank_candidates(
+    candidates: Vec<Evidence>,
+    lexical_scores: &std::collections::HashMap<String, f32>,
+    semantic_scores: &std::collections::HashMap<String, f32>,
+    depths: &std::collections::HashMap<String, u8>,
+    weights: &Weights,
+) -> Vec<RankedEvidence> {
+    let now = Utc::now();
+    let mut ranked = Vec::new();
+
+    for ev in candidates {
+        let key = ev.r#ref.to_key();
+        let lexical = lexical_scores.get(&key).copied().unwrap_or(0.0);
+        let semantic = semantic_scores.get(&key).copied().unwrap_or(0.0);
+        let depth = depths.get(&key).copied().unwrap_or(1);
+        let graph_prox = compute_graph_proximity_score(depth);
+
+        let updated_dt = ev
+            .updated_at
+            .as_deref()
+            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.with_timezone(&Utc));
+        let freshness = compute_freshness_score(updated_dt, now);
+
+        let final_score = compute_hybrid_score(weights, lexical, semantic, graph_prox, freshness);
+
+        ranked.push(RankedEvidence {
+            evidence: ev,
+            score: final_score,
+            lexical_score: lexical,
+            semantic_score: semantic,
+            graph_score: graph_prox,
+            freshness_score: freshness,
+        });
+    }
+
+    ranked.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    ranked
+}
