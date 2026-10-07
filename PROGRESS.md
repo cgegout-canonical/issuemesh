@@ -15,7 +15,7 @@ stage 2 | done | Read-only HTTP + connectors | d0a6bab
 stage 3 | done | Object store + relations | 1ab5e2e
 stage 4 | done | FTS + traversal | 4964b86
 stage 5 | done | Axum + basic UI | 681439a
-stage 6 | done | Wizard + Settings + Health | pending
+stage 6 | done | Wizard + Settings + Health | a65fbfd
 stage 7 | in progress | Jobs + SSE | pending
 stage 8 | todo | Model client + planner | pending
 stage 9 | todo | Embeddings + hybrid ranking | pending
