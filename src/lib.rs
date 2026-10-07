@@ -3,6 +3,7 @@ pub mod connectors;
 pub mod jobs;
 pub mod model;
 pub mod paths;
+pub mod search;
 pub mod store;
 pub mod util;
 pub mod web;

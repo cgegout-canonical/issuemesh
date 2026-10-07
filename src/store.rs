@@ -621,6 +621,102 @@ impl Store {
         .await
     }
 
+    /// Save embedding vector with model_name and dimension guard
+    pub async fn upsert_embedding(
+        &self,
+        object_key: &str,
+        vector: &[f32],
+        model_name: &str,
+    ) -> Result<()> {
+        let object_key = object_key.to_string();
+        let model_name = model_name.to_string();
+        let dimension = vector.len() as i64;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Convert f32 slice into little-endian bytes blob
+        let mut blob = Vec::with_capacity(vector.len() * 4);
+        for &val in vector {
+            blob.extend_from_slice(&val.to_le_bytes());
+        }
+
+        self.call(move |conn| {
+            conn.execute(
+                "INSERT INTO embeddings (object_key, embedding_blob, dimension, model_name, stale, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, 0, ?5)
+                 ON CONFLICT(object_key) DO UPDATE SET
+                     embedding_blob = excluded.embedding_blob,
+                     dimension = excluded.dimension,
+                     model_name = excluded.model_name,
+                     stale = 0,
+                     updated_at = excluded.updated_at",
+                rusqlite::params![&object_key, blob, dimension, &model_name, &now],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Mark embeddings stale if dimension or model_name does not match current configured model
+    pub async fn check_and_mark_stale_embeddings(
+        &self,
+        current_model: &str,
+        current_dimension: usize,
+    ) -> Result<usize> {
+        let current_model = current_model.to_string();
+        let current_dim = current_dimension as i64;
+
+        self.call(move |conn| {
+            let updated = conn.execute(
+                "UPDATE embeddings
+                 SET stale = 1
+                 WHERE stale = 0 AND (model_name != ?1 OR dimension != ?2)",
+                rusqlite::params![&current_model, current_dim],
+            )?;
+            Ok(updated)
+        })
+        .await
+    }
+
+    /// Retrieve all active (non-stale) embeddings matching expected model_name and dimension
+    pub async fn get_valid_embeddings(
+        &self,
+        expected_model: &str,
+        expected_dim: usize,
+    ) -> Result<Vec<(String, Vec<f32>)>> {
+        let expected_model = expected_model.to_string();
+        let expected_dim = expected_dim as i64;
+
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT object_key, embedding_blob
+                 FROM embeddings
+                 WHERE stale = 0 AND model_name = ?1 AND dimension = ?2",
+            )?;
+
+            let rows = stmt.query_map(rusqlite::params![&expected_model, expected_dim], |row| {
+                let key: String = row.get(0)?;
+                let blob: Vec<u8> = row.get(1)?;
+                Ok((key, blob))
+            })?;
+
+            let mut out = Vec::new();
+            for item in rows {
+                let (key, blob) = item?;
+                if blob.len() % 4 == 0 {
+                    let mut vec = Vec::with_capacity(blob.len() / 4);
+                    for chunk in blob.chunks_exact(4) {
+                        let arr: [u8; 4] = chunk.try_into().unwrap();
+                        vec.push(f32::from_le_bytes(arr));
+                    }
+                    out.push((key, vec));
+                }
+            }
+
+            Ok(out)
+        })
+        .await
+    }
+
     /// Datastore summary statistics
     pub async fn get_stats(&self) -> Result<DatastoreStats> {
         self.call(|conn| {
