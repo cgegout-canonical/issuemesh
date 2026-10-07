@@ -64,7 +64,7 @@ async fn main() -> Result<()> {
         );
     }
 
-    let _app_state = AppState {
+    let app_state = AppState {
         paths: paths.clone(),
         config: Arc::new(RwLock::new(config.clone())),
         secrets: Arc::new(RwLock::new(secrets)),
@@ -116,6 +116,10 @@ async fn main() -> Result<()> {
         println!("Web UI:");
         println!("http://{}:{}", bind_addr, port);
     }
+
+    let router = issuemesh::web::build_router(app_state);
+    let listener = tokio::net::TcpListener::bind(format!("{}:{}", bind_addr, port)).await?;
+    axum::serve(listener, router).await?;
 
     Ok(())
 }

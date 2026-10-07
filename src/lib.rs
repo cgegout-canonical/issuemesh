@@ -3,6 +3,7 @@ pub mod connectors;
 pub mod paths;
 pub mod store;
 pub mod util;
+pub mod web;
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
