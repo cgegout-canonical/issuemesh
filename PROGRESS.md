@@ -21,4 +21,4 @@ stage 8 | done | Model client + planner | ee8daf8
 stage 9 | done | Embeddings + hybrid ranking | 7279885
 stage 10 | done | Deep search + consistency | b67f229
 stage 11 | done | Results UI, Memory, Sources, run page | 2dab5df
-stage 12 | todo | Hardening, release, e2e | pending
+stage 12 | done | Hardening, release, e2e | pending
