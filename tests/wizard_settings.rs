@@ -4,9 +4,7 @@ use issuemesh::paths::Paths;
 use issuemesh::store::Store;
 use issuemesh::web::{build_router, SettingsPayload};
 use issuemesh::AppState;
-use std::sync::Arc;
 use tempfile::tempdir;
-use tokio::sync::RwLock;
 
 async fn setup_app_unonboarded() -> (axum::Router, AppState, tempfile::TempDir) {
     let tmp = tempdir().unwrap();
@@ -17,13 +15,7 @@ async fn setup_app_unonboarded() -> (axum::Router, AppState, tempfile::TempDir) 
     let secrets = Secrets::default();
     let store = Store::open_in_memory().unwrap();
 
-    let state = AppState {
-        paths,
-        config: Arc::new(RwLock::new(config)),
-        secrets: Arc::new(RwLock::new(secrets)),
-        store,
-        jobs: issuemesh::jobs::JobManager::new(),
-    };
+    let state = AppState::new(paths, config, secrets, store);
 
     (build_router(state.clone()), state, tmp)
 }

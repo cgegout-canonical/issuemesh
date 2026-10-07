@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IssueMesh - Connected Sources & Containers</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .source-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.25rem;
+            margin-bottom: 2rem;
+        }
+        .source-card {
+            background: var(--color-white);
+            border: 1px solid var(--color-border-grey);
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .source-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        .source-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        table.data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.95rem;
+            margin-top: 1rem;
+        }
+        table.data-table th, table.data-table td {
+            text-align: left;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--color-border-grey);
+        }
+        table.data-table th {
+            background: var(--color-warm-grey);
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/" class="brand">
+            <span class="brand-dot"></span>
+            IssueMesh
+        </a>
+        <nav>
+            <a href="/">Search</a>
+            <a href="/memory">Memory</a>
+            <a href="/sources" class="active">Sources</a>
+            <a href="/health">Health</a>
+            <a href="/settings">Settings</a>
+        </nav>
+        <div id="header-health" class="status-badge">
+            <span class="dot dot-healthy"></span>
+            <span>Ready</span>
+        </div>
+    </header>
+
+    <main class="container">
+        <h1 style="font-weight: 300; margin-bottom: 0.5rem;">Connected Sources & Repositories</h1>
+        <p style="color: var(--color-muted-text); margin-bottom: 2rem;">
+            Inspect connected external trackers, configured repositories, and the objects indexed across each container.
+        </p>
+
+        <div class="source-grid" id="trackers-grid">
+            <div class="card"><p>Loading tracker health...</p></div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Indexed Containers & Projects</div>
+            <p style="color: var(--color-muted-text); font-size: 0.9rem; margin-bottom: 0.5rem;">
+                Repositories, projects, and bug trackers with locally cached engineering evidence.
+            </p>
+            <div id="containers-table-container">
+                <p>Loading containers...</p>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        async function loadSourcesData() {
+            try {
+                // 1. Health & connector state
+                const healthResp = await fetch('/api/health');
+                const health = await healthResp.json();
+                renderTrackerCards(health.subsystems || {});
+
+                // 2. Container stats
+                const sourcesResp = await fetch('/api/sources');
+                const sources = await sourcesResp.json();
+                renderContainersTable(sources);
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function renderTrackerCards(subsystems) {
+            const grid = document.getElementById('trackers-grid');
+            const trackers = [
+                { key: 'github', name: 'GitHub', badge: 'badge-github' },
+                { key: 'jira', name: 'Jira', badge: 'badge-jira' },
+                { key: 'launchpad', name: 'Launchpad', badge: 'badge-launchpad' }
+            ];
+
+            let html = '';
+            for (const t of trackers) {
+                const sub = subsystems[t.key] || { enabled: false, ok: false, detail: 'Not configured' };
+                const dotClass = !sub.enabled ? 'dot-idle' : (sub.ok ? 'dot-healthy' : 'dot-unhealthy');
+                const statusText = !sub.enabled ? 'Disabled' : (sub.ok ? 'Connected' : 'Degraded');
+
+                html += `
+                    <div class="source-card">
+                        <div>
+                            <div class="source-header">
+                                <span class="badge ${t.badge}">${t.name}</span>
+                                <div class="status-badge">
+                                    <span class="dot ${dotClass}"></span>
+                                    <span>${statusText}</span>
+                                </div>
+                            </div>
+                            <div style="font-size: 0.9rem; color: var(--color-muted-text); margin-bottom: 0.5rem;">
+                                ${escapeHtml(sub.detail || '')}
+                            </div>
+                            ${sub.rate_limit_remaining !== undefined && sub.rate_limit_remaining !== null ?
+                                `<div style="font-size: 0.85rem; color: var(--color-muted-text);">Rate Limit Remaining: <strong>${sub.rate_limit_remaining}</strong></div>` : ''}
+                        </div>
+                        <div style="margin-top: 1rem;">
+                            <a href="/settings" class="btn btn-secondary" style="display: inline-block; text-decoration: none; padding: 0.4rem 0.8rem; font-size: 0.85rem;">Configure</a>
+                        </div>
+                    </div>
+                `;
+            }
+            grid.innerHTML = html;
+        }
+
+        function renderContainersTable(sources) {
+            const container = document.getElementById('containers-table-container');
+            if (!sources || sources.length === 0) {
+                container.innerHTML = '<p style="color: var(--color-muted-text); padding: 1rem 0;">No containers indexed yet. Run a search to populate local memory.</p>';
+                return;
+            }
+
+            let html = `
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Source</th>
+                            <th>Container / Project</th>
+                            <th>Objects Cached</th>
+                            <th>Last Updated</th>
+                            <th>First Seen</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            for (const s of sources) {
+                const badgeClass = 'badge-' + s.source;
+                html += `
+                    <tr>
+                        <td><span class="badge ${badgeClass}">${s.source}</span></td>
+                        <td><strong>${escapeHtml(s.container)}</strong></td>
+                        <td>${(s.object_count || 0).toLocaleString()}</td>
+                        <td>${s.last_updated ? formatTime(s.last_updated) : '-'}</td>
+                        <td>${s.first_seen ? formatTime(s.first_seen) : '-'}</td>
+                    </tr>
+                `;
+            }
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        function formatTime(iso) {
+            try {
+                const d = new Date(iso);
+                return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            } catch {
+                return iso;
+            }
+        }
+
+        function escapeHtml(s) {
+            return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        loadSourcesData();
+    </script>
+</body>
+</html>

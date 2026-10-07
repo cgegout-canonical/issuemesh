@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IssueMesh - Search Run Inspection</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .meta-box {
+            background: var(--color-warm-grey);
+            padding: 1rem;
+            border: 1px solid var(--color-border-grey);
+            border-radius: 2px;
+        }
+        .meta-val {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--color-dark-text);
+        }
+        .meta-lbl {
+            font-size: 0.8rem;
+            color: var(--color-muted-text);
+            text-transform: uppercase;
+        }
+        .raw-json {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 1rem;
+            font-size: 0.85rem;
+            overflow-x: auto;
+            border-radius: 2px;
+        }
+        table.data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.95rem;
+            margin-top: 0.5rem;
+        }
+        table.data-table th, table.data-table td {
+            text-align: left;
+            padding: 0.6rem 0.8rem;
+            border-bottom: 1px solid var(--color-border-grey);
+        }
+        table.data-table th {
+            background: var(--color-warm-grey);
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/" class="brand">
+            <span class="brand-dot"></span>
+            IssueMesh
+        </a>
+        <nav>
+            <a href="/">Search</a>
+            <a href="/memory">Memory</a>
+            <a href="/sources">Sources</a>
+            <a href="/health">Health</a>
+            <a href="/settings">Settings</a>
+        </nav>
+        <div id="header-health" class="status-badge">
+            <span class="dot dot-healthy"></span>
+            <span>Ready</span>
+        </div>
+    </header>
+
+    <main class="container">
+        <div style="margin-bottom: 1.5rem;">
+            <a href="/" style="color: var(--color-orange); text-decoration: none; font-size: 0.9rem;">&larr; Back to Search</a>
+            <h1 style="font-weight: 300; margin-top: 0.5rem; margin-bottom: 0.25rem;" id="run-query">Search Run</h1>
+            <p style="color: var(--color-muted-text); font-family: var(--font-mono); font-size: 0.9rem;" id="run-id">-</p>
+        </div>
+
+        <div class="meta-grid">
+            <div class="meta-box">
+                <div class="meta-val" id="meta-duration">-</div>
+                <div class="meta-lbl">Duration</div>
+            </div>
+            <div class="meta-box">
+                <div class="meta-val" id="meta-objects">-</div>
+                <div class="meta-lbl">Objects Evaluated</div>
+            </div>
+            <div class="meta-box">
+                <div class="meta-val" id="meta-reads">-</div>
+                <div class="meta-lbl">Deep Reads</div>
+            </div>
+            <div class="meta-box">
+                <div class="meta-val" id="meta-relations">-</div>
+                <div class="meta-lbl">Relations Followed</div>
+            </div>
+            <div class="meta-box">
+                <div class="meta-val" id="meta-model">-</div>
+                <div class="meta-lbl">Model</div>
+            </div>
+            <div class="meta-box">
+                <div class="meta-val" id="meta-prompt-ver">-</div>
+                <div class="meta-lbl">Prompt Version</div>
+            </div>
+        </div>
+
+        <div class="card" id="answer-card" style="display: none;">
+            <div class="card-title">Synthesized Answer</div>
+            <div id="run-answer" style="white-space: pre-wrap; line-height: 1.6;"></div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Retrieved & Ranked Evidence</div>
+            <div id="objects-table-area">Loading objects...</div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Search Plan</div>
+            <pre class="raw-json" id="plan-json">Loading...</pre>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Execution Stats</div>
+            <pre class="raw-json" id="stats-json">Loading...</pre>
+        </div>
+    </main>
+
+    <script>
+        // Extract run id from URL: /search/{id}/run
+        const pathParts = window.location.pathname.split('/');
+        const runId = pathParts[2] || '';
+
+        async function loadRunDetails() {
+            if (!runId) {
+                document.getElementById('run-query').textContent = "Invalid run ID";
+                return;
+            }
+
+            try {
+                const resp = await fetch(`/api/search/${encodeURIComponent(runId)}/run`);
+                if (!resp.ok) throw new Error("Search run not found");
+                const data = await resp.json();
+                renderRun(data);
+            } catch (e) {
+                document.getElementById('run-query').textContent = "Run not found";
+                document.getElementById('run-id').textContent = e.message;
+            }
+        }
+
+        function renderRun(data) {
+            const run = data.run;
+            document.getElementById('run-query').textContent = `“${run.query}”`;
+            document.getElementById('run-id').textContent = `Run ID: ${run.id} · Created: ${run.created_at}`;
+
+            let stats = {};
+            try { stats = JSON.parse(run.stats_json); } catch {}
+
+            document.getElementById('meta-duration').textContent = (stats.duration_ms || 0) + 'ms';
+            document.getElementById('meta-objects').textContent = (stats.objects_analysed || 0).toLocaleString();
+            document.getElementById('meta-reads').textContent = (stats.deep_reads || 0).toLocaleString();
+            document.getElementById('meta-relations').textContent = (stats.relations_followed || 0).toLocaleString();
+            document.getElementById('meta-model').textContent = run.model_name || 'local-heuristic';
+            document.getElementById('meta-prompt-ver').textContent = run.prompt_version || 'v1.0';
+
+            if (run.answer_markdown) {
+                document.getElementById('answer-card').style.display = 'block';
+                document.getElementById('run-answer').textContent = run.answer_markdown;
+            }
+
+            try {
+                document.getElementById('plan-json').textContent = JSON.stringify(JSON.parse(run.plan_json), null, 2);
+            } catch {
+                document.getElementById('plan-json').textContent = run.plan_json;
+            }
+
+            try {
+                document.getElementById('stats-json').textContent = JSON.stringify(JSON.parse(run.stats_json), null, 2);
+            } catch {
+                document.getElementById('stats-json').textContent = run.stats_json;
+            }
+
+            // Ranked objects table
+            const objects = data.objects || [];
+            if (objects.length === 0) {
+                document.getElementById('objects-table-area').innerHTML = '<p style="color: var(--color-muted-text);">No objects recorded for this run.</p>';
+            } else {
+                let html = `
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Rank</th>
+                                <th>Source</th>
+                                <th>Object</th>
+                                <th>State</th>
+                                <th>Score</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                for (const obj of objects) {
+                    const badgeClass = 'badge-' + obj.source;
+                    html += `
+                        <tr>
+                            <td>#${obj.rank}</td>
+                            <td><span class="badge ${badgeClass}">${obj.source}</span></td>
+                            <td>
+                                <a href="${obj.url}" target="_blank" style="color: var(--color-dark-text); font-weight: 500;">
+                                    ${escapeHtml(obj.title || obj.object_key)}
+                                </a>
+                                <div style="font-size: 0.8rem; color: var(--color-muted-text); font-family: var(--font-mono);">${obj.object_key}</div>
+                            </td>
+                            <td>${escapeHtml(obj.state || '-')}</td>
+                            <td><strong>${(obj.relevance_score || 0).toFixed(3)}</strong></td>
+                        </tr>
+                    `;
+                }
+                html += '</tbody></table>';
+                document.getElementById('objects-table-area').innerHTML = html;
+            }
+        }
+
+        function escapeHtml(s) {
+            return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        loadRunDetails();
+    </script>
+</body>
+</html>

@@ -20,6 +20,7 @@ pub struct DeepSearchResult {
     pub plan: SearchPlan,
     pub ranked_results: Vec<RankedEvidence>,
     pub findings: Vec<ConsistencyFinding>,
+    pub relations_followed: Vec<crate::connectors::Relation>,
     pub stats: SearchStats,
     pub answer: Option<String>,
 }
@@ -458,11 +459,42 @@ impl SearchOrchestrator {
         stats.duration_ms = start.elapsed().as_millis() as u64;
         emit(SearchEvent::Complete(stats.clone())).await;
 
+        // Persist search run into Store if job_id is present
+        if let Some(id) = job_id {
+            let plan_json = serde_json::to_string(&plan).unwrap_or_default();
+            let stats_json = serde_json::to_string(&stats).unwrap_or_default();
+            let object_keys_scores: Vec<(String, f64)> = final_ranked
+                .iter()
+                .map(|r| (r.evidence.r#ref.to_key(), r.score as f64))
+                .collect();
+
+            let model_name = if cfg.model.enabled {
+                cfg.model.model.as_deref()
+            } else {
+                None
+            };
+
+            let _ = state
+                .store
+                .save_search_run(
+                    id,
+                    query,
+                    &plan_json,
+                    &stats_json,
+                    answer.as_deref(),
+                    Some("v1.0"),
+                    model_name,
+                    &object_keys_scores,
+                )
+                .await;
+        }
+
         DeepSearchResult {
             query: query.to_string(),
             plan,
             ranked_results: final_ranked,
             findings,
+            relations_followed: collected_relations,
             stats,
             answer,
         }

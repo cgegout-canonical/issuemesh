@@ -151,6 +151,13 @@ impl JobManager {
         Some((history, rx))
     }
 
+    pub async fn get_event_history(&self, id: &str) -> Option<Vec<SearchEvent>> {
+        let lock = self.jobs.read().await;
+        let job_arc = lock.get(id)?.clone();
+        let job = job_arc.read().await;
+        Some(job.event_history.clone())
+    }
+
     pub async fn emit_event(&self, id: &str, event: SearchEvent) {
         let lock = self.jobs.read().await;
         if let Some(job_arc) = lock.get(id) {

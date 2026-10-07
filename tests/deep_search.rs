@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use tempfile::tempdir;
-use tokio::sync::RwLock;
 
 use issuemesh::config::{Config, Secrets};
 use issuemesh::connectors::{Evidence, ObjectRef, Relation};
@@ -256,13 +255,7 @@ async fn test_deep_search_pipeline_end_to_end_on_fixture_graph() {
     cfg.launchpad.enabled = false;
     cfg.model.enabled = false;
 
-    let app_state = Arc::new(AppState {
-        paths,
-        config: Arc::new(RwLock::new(cfg)),
-        secrets: Arc::new(RwLock::new(Secrets::default())),
-        store,
-        jobs: issuemesh::jobs::JobManager::new(),
-    });
+    let app_state = Arc::new(AppState::new(paths, cfg, Secrets::default(), store));
 
     let job_id = app_state
         .jobs

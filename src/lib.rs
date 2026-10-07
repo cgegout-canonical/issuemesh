@@ -18,4 +18,24 @@ pub struct AppState {
     pub secrets: Arc<RwLock<config::Secrets>>,
     pub store: store::Store,
     pub jobs: jobs::JobManager,
+    pub search_results:
+        Arc<RwLock<std::collections::HashMap<String, search::orchestrator::DeepSearchResult>>>,
+}
+
+impl AppState {
+    pub fn new(
+        paths: paths::Paths,
+        config: config::Config,
+        secrets: config::Secrets,
+        store: store::Store,
+    ) -> Self {
+        Self {
+            paths,
+            config: Arc::new(RwLock::new(config)),
+            secrets: Arc::new(RwLock::new(secrets)),
+            store,
+            jobs: jobs::JobManager::new(),
+            search_results: Arc::new(RwLock::new(std::collections::HashMap::new())),
+        }
+    }
 }

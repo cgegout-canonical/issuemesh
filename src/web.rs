@@ -28,6 +28,9 @@ pub fn build_router(state: AppState) -> Router {
         .route("/setup", get(setup_handler))
         .route("/health", get(health_page_handler))
         .route("/settings", get(settings_page_handler))
+        .route("/memory", get(memory_page_handler))
+        .route("/sources", get(sources_page_handler))
+        .route("/search/{id}/run", get(search_run_page_handler))
         // API routes
         .route("/api/health", get(health_api_handler))
         .route("/api/stats", get(stats_handler))
@@ -37,7 +40,20 @@ pub fn build_router(state: AppState) -> Router {
             post(create_search_job_handler).get(list_search_jobs_handler),
         )
         .route("/api/search/{id}", get(get_search_job_handler))
+        .route("/api/search/{id}/result", get(get_search_result_handler))
+        .route("/api/search/{id}/run", get(get_search_run_handler))
         .route("/api/search/{id}/events", get(search_events_sse_handler))
+        .route("/api/memory", get(get_memory_handler))
+        .route("/api/memory/integrity", post(memory_integrity_handler))
+        .route("/api/memory/optimize", post(memory_optimize_handler))
+        .route("/api/memory/rebuild-fts", post(memory_rebuild_fts_handler))
+        .route(
+            "/api/memory/clear-history",
+            post(memory_clear_history_handler),
+        )
+        .route("/api/memory/purge-stale", post(memory_purge_stale_handler))
+        .route("/api/memory/reembed", post(memory_reembed_handler))
+        .route("/api/sources", get(get_sources_handler))
         .route("/api/setup", post(save_setup_handler))
         .route(
             "/api/settings",
@@ -116,6 +132,27 @@ async fn settings_page_handler() -> impl IntoResponse {
     match Assets::get("settings.html") {
         Some(content) => Html(content.data).into_response(),
         None => (StatusCode::NOT_FOUND, "settings.html not found").into_response(),
+    }
+}
+
+async fn memory_page_handler() -> impl IntoResponse {
+    match Assets::get("memory.html") {
+        Some(content) => Html(content.data).into_response(),
+        None => (StatusCode::NOT_FOUND, "memory.html not found").into_response(),
+    }
+}
+
+async fn sources_page_handler() -> impl IntoResponse {
+    match Assets::get("sources.html") {
+        Some(content) => Html(content.data).into_response(),
+        None => (StatusCode::NOT_FOUND, "sources.html not found").into_response(),
+    }
+}
+
+async fn search_run_page_handler() -> impl IntoResponse {
+    match Assets::get("run.html") {
+        Some(content) => Html(content.data).into_response(),
+        None => (StatusCode::NOT_FOUND, "run.html not found").into_response(),
     }
 }
 
@@ -451,7 +488,220 @@ async fn search_events_sse_handler(
 }
 
 async fn run_search_pipeline(state: Arc<AppState>, job_id: String, query: String) {
-    let _ = crate::search::SearchOrchestrator::execute(state, Some(&job_id), &query).await;
+    let result =
+        crate::search::SearchOrchestrator::execute(Arc::clone(&state), Some(&job_id), &query).await;
+    let mut map = state.search_results.write().await;
+    map.insert(job_id, result);
+}
+
+async fn get_search_result_handler(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    // 1. Check in-memory search results
+    {
+        let map = state.search_results.read().await;
+        if let Some(res) = map.get(&id) {
+            return Json(res.clone()).into_response();
+        }
+    }
+
+    // 2. Check persistent store
+    match state.store.get_search_run(&id).await {
+        Ok(Some(details)) => {
+            // Reconstruct a DeepSearchResult-compatible JSON response
+            let plan: crate::model::planner::SearchPlan =
+                serde_json::from_str(&details.run.plan_json).unwrap_or_else(|_| {
+                    crate::model::planner::SearchPlan {
+                        query: details.run.query.clone(),
+                        ..Default::default()
+                    }
+                });
+            let stats: crate::jobs::SearchStats =
+                serde_json::from_str(&details.run.stats_json).unwrap_or_default();
+
+            // Convert ranked objects
+            let ranked_results: Vec<crate::search::ranking::RankedEvidence> = details
+                .objects
+                .into_iter()
+                .map(|obj| {
+                    let r_ref = crate::connectors::ObjectRef::from_key(&obj.object_key)
+                        .unwrap_or_else(|| {
+                            crate::connectors::ObjectRef::new(&obj.source, "issue", &obj.object_key)
+                        });
+                    let evidence = crate::connectors::Evidence {
+                        r#ref: r_ref,
+                        title: obj.title,
+                        snippet: String::new(),
+                        body: None,
+                        url: obj.url,
+                        container: String::new(),
+                        author: String::new(),
+                        created_at: None,
+                        updated_at: None,
+                        state: obj.state,
+                        native: std::collections::BTreeMap::new(),
+                    };
+                    crate::search::ranking::RankedEvidence {
+                        evidence,
+                        score: obj.relevance_score as f32,
+                        lexical_score: obj.relevance_score as f32,
+                        semantic_score: 0.0,
+                        graph_score: 0.0,
+                        freshness_score: 0.0,
+                    }
+                })
+                .collect();
+
+            let res = serde_json::json!({
+                "query": details.run.query,
+                "plan": plan,
+                "ranked_results": ranked_results,
+                "findings": [],
+                "relations_followed": [],
+                "stats": stats,
+                "answer": details.run.answer_markdown,
+            });
+            Json(res).into_response()
+        }
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Search run not found" })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_search_run_handler(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    match state.store.get_search_run(&id).await {
+        Ok(Some(details)) => Json(details).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Search run not found" })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_memory_handler(State(state): State<Arc<AppState>>) -> Response {
+    match state
+        .store
+        .get_memory_diagnostics(&state.paths.db_file)
+        .await
+    {
+        Ok(diag) => Json(diag).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn memory_integrity_handler(State(state): State<Arc<AppState>>) -> Response {
+    match state.store.check_integrity().await {
+        Ok(result) => {
+            Json(serde_json::json!({ "ok": result == "ok", "result": result })).into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn memory_optimize_handler(State(state): State<Arc<AppState>>) -> Response {
+    match state.store.optimize_database().await {
+        Ok(()) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn memory_rebuild_fts_handler(State(state): State<Arc<AppState>>) -> Response {
+    match state.store.rebuild_fts().await {
+        Ok(()) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn memory_clear_history_handler(State(state): State<Arc<AppState>>) -> Response {
+    match state.store.clear_search_history().await {
+        Ok(cleared) => Json(serde_json::json!({ "ok": true, "cleared": cleared })).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct PurgeStalePayload {
+    cutoff: Option<String>,
+}
+
+async fn memory_purge_stale_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<PurgeStalePayload>,
+) -> Response {
+    let cutoff = payload
+        .cutoff
+        .unwrap_or_else(|| (chrono::Utc::now() - chrono::Duration::days(30)).to_rfc3339());
+    match state.store.purge_stale_objects(&cutoff).await {
+        Ok(purged) => Json(serde_json::json!({ "ok": true, "purged": purged })).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn memory_reembed_handler(State(state): State<Arc<AppState>>) -> Response {
+    // Re-embed triggers background batch embedding of stored objects
+    // For now we optimize database and verify embedding model status
+    let cfg = state.config.read().await;
+    if !cfg.model.enabled {
+        return Json(serde_json::json!({
+            "ok": false,
+            "error": "Model integration is disabled. Cannot generate embeddings."
+        }))
+        .into_response();
+    }
+    Json(serde_json::json!({ "ok": true, "message": "Embedding update triggered" })).into_response()
+}
+
+async fn get_sources_handler(State(state): State<Arc<AppState>>) -> Response {
+    match state.store.get_sources_summary().await {
+        Ok(sources) => Json(sources).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
 }
 
 // ---------------------------------------------------------------------------

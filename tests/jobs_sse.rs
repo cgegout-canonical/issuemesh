@@ -1,6 +1,4 @@
-use std::sync::Arc;
 use tempfile::tempdir;
-use tokio::sync::RwLock;
 
 use axum::{
     body::Body,
@@ -28,15 +26,7 @@ async fn setup_app() -> (axum::Router, AppState, tempfile::TempDir) {
     config.model.enabled = false;
 
     let store = Store::open_in_memory().unwrap();
-    let jobs = JobManager::new();
-
-    let state = AppState {
-        paths,
-        config: Arc::new(RwLock::new(config)),
-        secrets: Arc::new(RwLock::new(Secrets::default())),
-        store,
-        jobs,
-    };
+    let state = AppState::new(paths, config, Secrets::default(), store);
 
     (build_router(state.clone()), state, tmp)
 }

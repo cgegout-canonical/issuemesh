@@ -70,6 +70,7 @@ async fn main() -> Result<()> {
         secrets: Arc::new(RwLock::new(secrets)),
         store,
         jobs: issuemesh::jobs::JobManager::new(),
+        search_results: Arc::new(RwLock::new(std::collections::HashMap::new())),
     };
 
     println!("IssueMesh 0.1.0");

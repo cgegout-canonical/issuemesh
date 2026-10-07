@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IssueMesh - Local Memory & Datastore</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .diag-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .metric-box {
+            background: var(--color-warm-grey);
+            padding: 1rem;
+            border: 1px solid var(--color-border-grey);
+            border-radius: 2px;
+        }
+        .metric-value {
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: var(--color-dark-text);
+        }
+        .metric-label {
+            font-size: 0.85rem;
+            color: var(--color-muted-text);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .actions-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin-bottom: 2rem;
+        }
+        table.data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.95rem;
+            margin-top: 0.5rem;
+        }
+        table.data-table th, table.data-table td {
+            text-align: left;
+            padding: 0.6rem 0.8rem;
+            border-bottom: 1px solid var(--color-border-grey);
+        }
+        table.data-table th {
+            background: var(--color-warm-grey);
+            font-weight: 600;
+        }
+        .status-msg {
+            padding: 0.75rem 1rem;
+            border-radius: 2px;
+            margin-bottom: 1rem;
+            display: none;
+        }
+        .status-msg.success {
+            background-color: #EBF8EE;
+            border: 1px solid var(--color-green);
+            color: #14532D;
+            display: block;
+        }
+        .status-msg.error {
+            background-color: #FEF2F2;
+            border: 1px solid var(--color-red);
+            color: #991B1B;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/" class="brand">
+            <span class="brand-dot"></span>
+            IssueMesh
+        </a>
+        <nav>
+            <a href="/">Search</a>
+            <a href="/memory" class="active">Memory</a>
+            <a href="/sources">Sources</a>
+            <a href="/health">Health</a>
+            <a href="/settings">Settings</a>
+        </nav>
+        <div id="header-health" class="status-badge">
+            <span class="dot dot-healthy"></span>
+            <span>Ready</span>
+        </div>
+    </header>
+
+    <main class="container">
+        <h1 style="font-weight: 300; margin-bottom: 0.5rem;">Local Memory & Datastore</h1>
+        <p style="color: var(--color-muted-text); margin-bottom: 1.5rem;">
+            Inspect SQLite storage, FTS5 full-text indices, vector embeddings, and perform maintenance actions.
+        </p>
+
+        <div id="action-msg" class="status-msg"></div>
+
+        <div class="actions-bar">
+            <button class="btn btn-secondary" onclick="runAction('/api/memory/integrity', 'Integrity Check')">Run Integrity Check</button>
+            <button class="btn btn-secondary" onclick="runAction('/api/memory/optimize', 'Optimize Database')">Optimize & Vacuum</button>
+            <button class="btn btn-secondary" onclick="runAction('/api/memory/rebuild-fts', 'Rebuild FTS')">Rebuild FTS Index</button>
+            <button class="btn btn-secondary" onclick="runAction('/api/memory/clear-history', 'Clear Search History')">Clear Search History</button>
+            <button class="btn btn-secondary" onclick="purgeStale()">Purge Stale (>30d)</button>
+            <button class="btn btn-secondary" onclick="runAction('/api/memory/reembed', 'Re-embed')">Update Embeddings</button>
+            <button class="btn btn-secondary" onclick="loadMemory()">Refresh</button>
+        </div>
+
+        <div class="diag-grid">
+            <div class="metric-box">
+                <div class="metric-value" id="diag-size">-</div>
+                <div class="metric-label">Database File Size</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-value" id="diag-objects">-</div>
+                <div class="metric-label">Stored Objects</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-value" id="diag-relations">-</div>
+                <div class="metric-label">Graph Relations</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-value" id="diag-embeddings">-</div>
+                <div class="metric-label">Vector Embeddings</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-value" id="diag-pages">-</div>
+                <div class="metric-label">SQLite Pages (Free)</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-value" id="diag-runs">-</div>
+                <div class="metric-label">Search Runs Logged</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Objects by Source Tracker</div>
+            <div id="sources-breakdown">Loading...</div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Objects by Type</div>
+            <div id="types-breakdown">Loading...</div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Storage Diagnostics</div>
+            <table class="data-table">
+                <tbody>
+                    <tr><th>Database File Path</th><td id="diag-path">-</td></tr>
+                    <tr><th>Schema Version</th><td id="diag-schema">-</td></tr>
+                    <tr><th>Page Size</th><td id="diag-page-size">-</td></tr>
+                    <tr><th>Unresolved Graph References</th><td id="diag-unresolved">-</td></tr>
+                    <tr><th>Stale Embeddings</th><td id="diag-stale-embeddings">-</td></tr>
+                    <tr><th>Oldest Object Stored</th><td id="diag-oldest">-</td></tr>
+                    <tr><th>Newest Object Stored</th><td id="diag-newest">-</td></tr>
+                    <tr><th>Last Write Timestamp</th><td id="diag-last-write">-</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <script>
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        async function loadMemory() {
+            try {
+                const resp = await fetch('/api/memory');
+                if (!resp.ok) throw new Error('Failed to load diagnostics');
+                const data = await resp.json();
+
+                document.getElementById('diag-size').textContent = formatBytes(data.file_size_bytes);
+                document.getElementById('diag-objects').textContent = (data.total_objects || 0).toLocaleString();
+                document.getElementById('diag-relations').textContent = (data.total_relations || 0).toLocaleString();
+                document.getElementById('diag-embeddings').textContent = (data.total_embeddings || 0).toLocaleString();
+                document.getElementById('diag-pages').textContent = `${data.page_count} (${data.free_pages} free)`;
+                document.getElementById('diag-runs').textContent = (data.total_search_runs || 0).toLocaleString();
+
+                document.getElementById('diag-path').textContent = data.database_file;
+                document.getElementById('diag-schema').textContent = 'v' + data.schema_version;
+                document.getElementById('diag-page-size').textContent = data.page_size + ' bytes';
+                document.getElementById('diag-unresolved').textContent = (data.unresolved_refs || 0).toLocaleString();
+                document.getElementById('diag-stale-embeddings').textContent = (data.stale_embeddings || 0).toLocaleString();
+                document.getElementById('diag-oldest').textContent = data.oldest_object || 'None';
+                document.getElementById('diag-newest').textContent = data.newest_object || 'None';
+                document.getElementById('diag-last-write').textContent = data.last_write || 'None';
+
+                // Source breakdown
+                let srcHtml = '<table class="data-table"><thead><tr><th>Source</th><th>Count</th></tr></thead><tbody>';
+                const sources = Object.entries(data.objects_by_source || {});
+                if (sources.length === 0) {
+                    srcHtml = '<p style="color: var(--color-muted-text);">No objects stored yet.</p>';
+                } else {
+                    for (const [src, cnt] of sources) {
+                        srcHtml += `<tr><td><strong>${src}</strong></td><td>${cnt.toLocaleString()}</td></tr>`;
+                    }
+                    srcHtml += '</tbody></table>';
+                }
+                document.getElementById('sources-breakdown').innerHTML = srcHtml;
+
+                // Type breakdown
+                let typeHtml = '<table class="data-table"><thead><tr><th>Object Type</th><th>Count</th></tr></thead><tbody>';
+                const types = Object.entries(data.objects_by_type || {});
+                if (types.length === 0) {
+                    typeHtml = '<p style="color: var(--color-muted-text);">No objects stored yet.</p>';
+                } else {
+                    for (const [t, cnt] of types) {
+                        typeHtml += `<tr><td><code>${t}</code></td><td>${cnt.toLocaleString()}</td></tr>`;
+                    }
+                    typeHtml += '</tbody></table>';
+                }
+                document.getElementById('types-breakdown').innerHTML = typeHtml;
+
+            } catch (err) {
+                console.error(err);
+                showMsg('Failed to load memory diagnostics: ' + err.message, false);
+            }
+        }
+
+        function showMsg(text, success) {
+            const el = document.getElementById('action-msg');
+            el.className = 'status-msg ' + (success ? 'success' : 'error');
+            el.textContent = text;
+            setTimeout(() => { el.className = 'status-msg'; }, 6000);
+        }
+
+        async function runAction(endpoint, label) {
+            try {
+                const resp = await fetch(endpoint, { method: 'POST' });
+                const res = await resp.json();
+                if (res.ok) {
+                    showMsg(`${label} succeeded!`, true);
+                    loadMemory();
+                } else {
+                    showMsg(`${label} failed: ${res.error || res.result || 'Unknown error'}`, false);
+                }
+            } catch (e) {
+                showMsg(`${label} request failed: ${e.message}`, false);
+            }
+        }
+
+        async function purgeStale() {
+            if (!confirm("Purge objects that have not been refreshed in over 30 days?")) return;
+            try {
+                const resp = await fetch('/api/memory/purge-stale', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                const res = await resp.json();
+                if (res.ok) {
+                    showMsg(`Purged ${res.purged} stale objects.`, true);
+                    loadMemory();
+                } else {
+                    showMsg(`Purge failed: ${res.error}`, false);
+                }
+            } catch (e) {
+                showMsg(`Purge request failed: ${e.message}`, false);
+            }
+        }
+
+        loadMemory();
+    </script>
+</body>
+</html>

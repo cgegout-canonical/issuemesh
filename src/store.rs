@@ -1014,6 +1014,372 @@ impl Store {
         })
         .await
     }
+
+    /// Save completed search run and top objects
+    #[allow(clippy::too_many_arguments)]
+    pub async fn save_search_run(
+        &self,
+        id: &str,
+        query: &str,
+        plan_json: &str,
+        stats_json: &str,
+        answer: Option<&str>,
+        prompt_version: Option<&str>,
+        model_name: Option<&str>,
+        object_keys_scores: &[(String, f64)],
+    ) -> Result<()> {
+        let id = id.to_string();
+        let query = query.to_string();
+        let plan_json = plan_json.to_string();
+        let stats_json = stats_json.to_string();
+        let answer = answer.map(|s| s.to_string());
+        let prompt_version = prompt_version.map(|s| s.to_string());
+        let model_name = model_name.map(|s| s.to_string());
+        let now = chrono::Utc::now().to_rfc3339();
+        let keys_scores = object_keys_scores.to_vec();
+
+        self.call(move |conn| {
+            conn.execute(
+                "INSERT INTO search_runs (id, query, plan_json, stats_json, answer_markdown, prompt_version, model_name, created_at, completed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)
+                 ON CONFLICT(id) DO UPDATE SET
+                     answer_markdown = excluded.answer_markdown,
+                     stats_json = excluded.stats_json,
+                     completed_at = excluded.completed_at",
+                rusqlite::params![
+                    &id,
+                    &query,
+                    &plan_json,
+                    &stats_json,
+                    answer.as_deref(),
+                    prompt_version.as_deref(),
+                    model_name.as_deref(),
+                    &now
+                ],
+            )?;
+
+            let mut obj_stmt = conn.prepare(
+                "INSERT OR REPLACE INTO search_run_objects (search_run_id, object_key, relevance_score, rank)
+                 VALUES (?1, ?2, ?3, ?4)",
+            )?;
+
+            for (idx, (k, score)) in keys_scores.iter().enumerate() {
+                obj_stmt.execute(rusqlite::params![&id, k, *score, idx as i64])?;
+            }
+
+            Ok(())
+        })
+        .await
+    }
+
+    /// Retrieve search run details
+    pub async fn get_search_run(&self, id: &str) -> Result<Option<SearchRunDetails>> {
+        let id = id.to_string();
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, query, plan_json, stats_json, answer_markdown, prompt_version, model_name, created_at, completed_at
+                 FROM search_runs WHERE id = ?1",
+            )?;
+
+            let res = stmt.query_row(rusqlite::params![&id], |row| {
+                let id: String = row.get(0)?;
+                let query: String = row.get(1)?;
+                let plan_json: String = row.get(2)?;
+                let stats_json: String = row.get(3)?;
+                let answer_markdown: Option<String> = row.get(4)?;
+                let prompt_version: Option<String> = row.get(5)?;
+                let model_name: Option<String> = row.get(6)?;
+                let created_at: String = row.get(7)?;
+                let completed_at: Option<String> = row.get(8)?;
+
+                Ok(SearchRunRecord {
+                    id,
+                    query,
+                    plan_json,
+                    stats_json,
+                    answer_markdown,
+                    prompt_version,
+                    model_name,
+                    created_at,
+                    completed_at,
+                })
+            });
+
+            let record = match res {
+                Ok(r) => r,
+                Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
+                Err(e) => return Err(e.into()),
+            };
+
+            let mut obj_stmt = conn.prepare(
+                "SELECT s.object_key, s.relevance_score, s.rank, o.title, o.state, o.url, o.source
+                 FROM search_run_objects s
+                 LEFT JOIN objects o ON o.object_key = s.object_key
+                 WHERE s.search_run_id = ?1
+                 ORDER BY s.rank ASC",
+            )?;
+
+            let obj_rows = obj_stmt.query_map(rusqlite::params![&record.id], |row| {
+                let object_key: String = row.get(0)?;
+                let relevance_score: Option<f64> = row.get(1)?;
+                let rank: Option<i64> = row.get(2)?;
+                let title: Option<String> = row.get(3)?;
+                let state: Option<String> = row.get(4)?;
+                let url: Option<String> = row.get(5)?;
+                let source: Option<String> = row.get(6)?;
+
+                Ok(SearchRunObject {
+                    object_key,
+                    relevance_score: relevance_score.unwrap_or(0.0),
+                    rank: rank.unwrap_or(0),
+                    title: title.unwrap_or_default(),
+                    state: state.unwrap_or_default(),
+                    url: url.unwrap_or_default(),
+                    source: source.unwrap_or_default(),
+                })
+            })?;
+
+            let mut objects = Vec::new();
+            for item in obj_rows {
+                objects.push(item?);
+            }
+
+            Ok(Some(SearchRunDetails {
+                run: record,
+                objects,
+            }))
+        })
+        .await
+    }
+
+    /// List recent search runs
+    pub async fn list_search_runs(&self, limit: usize) -> Result<Vec<SearchRunRecord>> {
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, query, plan_json, stats_json, answer_markdown, prompt_version, model_name, created_at, completed_at
+                 FROM search_runs
+                 ORDER BY created_at DESC
+                 LIMIT ?1",
+            )?;
+
+            let rows = stmt.query_map(rusqlite::params![limit as i64], |row| {
+                Ok(SearchRunRecord {
+                    id: row.get(0)?,
+                    query: row.get(1)?,
+                    plan_json: row.get(2)?,
+                    stats_json: row.get(3)?,
+                    answer_markdown: row.get(4)?,
+                    prompt_version: row.get(5)?,
+                    model_name: row.get(6)?,
+                    created_at: row.get(7)?,
+                    completed_at: row.get(8)?,
+                })
+            })?;
+
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    /// Retrieve Memory & Database diagnostics (SPEC.md §42)
+    pub async fn get_memory_diagnostics(&self, db_path: &Path) -> Result<MemoryDiagnostics> {
+        let file_size_bytes = std::fs::metadata(db_path).map(|m| m.len()).unwrap_or(0);
+        let path_str = db_path.to_string_lossy().to_string();
+
+        self.call(move |conn| {
+            let page_count: i64 = conn
+                .query_row("PRAGMA page_count", [], |r| r.get(0))
+                .unwrap_or(0);
+            let page_size: i64 = conn
+                .query_row("PRAGMA page_size", [], |r| r.get(0))
+                .unwrap_or(4096);
+            let free_pages: i64 = conn
+                .query_row("PRAGMA freelist_count", [], |r| r.get(0))
+                .unwrap_or(0);
+            let schema_version: i64 = conn
+                .query_row("PRAGMA user_version", [], |r| r.get(0))
+                .unwrap_or(CURRENT_SCHEMA_VERSION);
+
+            let total_objects: i64 = conn
+                .query_row("SELECT COUNT(*) FROM objects", [], |r| r.get(0))
+                .unwrap_or(0);
+            let total_relations: i64 = conn
+                .query_row("SELECT COUNT(*) FROM relations", [], |r| r.get(0))
+                .unwrap_or(0);
+            let total_embeddings: i64 = conn
+                .query_row("SELECT COUNT(*) FROM embeddings", [], |r| r.get(0))
+                .unwrap_or(0);
+            let stale_embeddings: i64 = conn
+                .query_row("SELECT COUNT(*) FROM embeddings WHERE stale = 1", [], |r| {
+                    r.get(0)
+                })
+                .unwrap_or(0);
+            let unresolved_refs: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM unresolved_refs WHERE resolved = 0",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            let total_search_runs: i64 = conn
+                .query_row("SELECT COUNT(*) FROM search_runs", [], |r| r.get(0))
+                .unwrap_or(0);
+
+            let oldest_object: Option<String> = conn
+                .query_row(
+                    "SELECT MIN(created_at) FROM objects WHERE created_at IS NOT NULL",
+                    [],
+                    |r| r.get(0),
+                )
+                .ok();
+            let newest_object: Option<String> = conn
+                .query_row(
+                    "SELECT MAX(created_at) FROM objects WHERE created_at IS NOT NULL",
+                    [],
+                    |r| r.get(0),
+                )
+                .ok();
+            let last_write: Option<String> = conn
+                .query_row("SELECT MAX(last_fetched_at) FROM objects", [], |r| r.get(0))
+                .ok();
+
+            // Count by source
+            let mut by_source = std::collections::HashMap::new();
+            let mut src_stmt =
+                conn.prepare("SELECT source, COUNT(*) FROM objects GROUP BY source")?;
+            let src_rows = src_stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            for item in src_rows {
+                let (src, cnt): (String, i64) = item?;
+                by_source.insert(src, cnt);
+            }
+
+            // Count by object_type
+            let mut by_type = std::collections::HashMap::new();
+            let mut type_stmt =
+                conn.prepare("SELECT object_type, COUNT(*) FROM objects GROUP BY object_type")?;
+            let type_rows = type_stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            for item in type_rows {
+                let (tp, cnt): (String, i64) = item?;
+                by_type.insert(tp, cnt);
+            }
+
+            Ok(MemoryDiagnostics {
+                database_file: path_str,
+                file_size_bytes,
+                page_count,
+                page_size,
+                free_pages,
+                schema_version,
+                total_objects,
+                objects_by_source: by_source,
+                objects_by_type: by_type,
+                total_relations,
+                total_embeddings,
+                stale_embeddings,
+                unresolved_refs,
+                total_search_runs,
+                oldest_object,
+                newest_object,
+                last_write,
+            })
+        })
+        .await
+    }
+
+    /// Retrieve Sources Summary (SPEC.md §44)
+    pub async fn get_sources_summary(&self) -> Result<Vec<SourceContainerSummary>> {
+        self.call(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT source, container, COUNT(*) as obj_count,
+                        MAX(updated_at) as last_updated,
+                        MIN(first_seen_at) as first_seen
+                 FROM objects
+                 GROUP BY source, container
+                 ORDER BY source ASC, obj_count DESC",
+            )?;
+
+            let rows = stmt.query_map([], |row| {
+                let source: String = row.get(0)?;
+                let container: String = row.get(1)?;
+                let object_count: i64 = row.get(2)?;
+                let last_updated: Option<String> = row.get(3)?;
+                let first_seen: Option<String> = row.get(4)?;
+
+                Ok(SourceContainerSummary {
+                    source,
+                    container,
+                    object_count,
+                    last_updated,
+                    first_seen,
+                })
+            })?;
+
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    /// Run SQLite integrity check (SPEC.md §42)
+    pub async fn check_integrity(&self) -> Result<String> {
+        self.call(|conn| {
+            let res: String = conn.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
+            Ok(res)
+        })
+        .await
+    }
+
+    /// Optimize SQLite database (VACUUM and ANALYZE) (SPEC.md §43)
+    pub async fn optimize_database(&self) -> Result<()> {
+        self.call(|conn| {
+            conn.execute_batch("VACUUM; ANALYZE;")?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Rebuild full-text search index (SPEC.md §43)
+    pub async fn rebuild_fts(&self) -> Result<()> {
+        self.call(|conn| {
+            conn.execute_batch(
+                "DELETE FROM object_fts;
+                 INSERT INTO object_fts(object_key, title, snippet, body, container, author)
+                 SELECT object_key, title, snippet, COALESCE(body, ''), container, author FROM objects;",
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Clear search history (SPEC.md §43)
+    pub async fn clear_search_history(&self) -> Result<usize> {
+        self.call(|conn| {
+            conn.execute("DELETE FROM search_run_objects", [])?;
+            let affected = conn.execute("DELETE FROM search_runs", [])?;
+            Ok(affected)
+        })
+        .await
+    }
+
+    /// Purge stale objects older than given cutoff
+    pub async fn purge_stale_objects(&self, cutoff_rfc3339: &str) -> Result<usize> {
+        let cutoff = cutoff_rfc3339.to_string();
+        self.call(move |conn| {
+            let affected = conn.execute(
+                "DELETE FROM objects WHERE last_fetched_at < ?1",
+                rusqlite::params![&cutoff],
+            )?;
+            Ok(affected)
+        })
+        .await
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1044,6 +1410,66 @@ pub struct DatastoreStats {
     pub revision_count: i64,
     pub unresolved_count: i64,
     pub audit_count: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SearchRunRecord {
+    pub id: String,
+    pub query: String,
+    pub plan_json: String,
+    pub stats_json: String,
+    pub answer_markdown: Option<String>,
+    pub prompt_version: Option<String>,
+    pub model_name: Option<String>,
+    pub created_at: String,
+    pub completed_at: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SearchRunObject {
+    pub object_key: String,
+    pub relevance_score: f64,
+    pub rank: i64,
+    pub title: String,
+    pub state: String,
+    pub url: String,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SearchRunDetails {
+    pub run: SearchRunRecord,
+    pub objects: Vec<SearchRunObject>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MemoryDiagnostics {
+    pub database_file: String,
+    pub file_size_bytes: u64,
+    pub page_count: i64,
+    pub page_size: i64,
+    pub free_pages: i64,
+    pub schema_version: i64,
+    pub total_objects: i64,
+    pub objects_by_source: std::collections::HashMap<String, i64>,
+    pub objects_by_type: std::collections::HashMap<String, i64>,
+    pub total_relations: i64,
+    pub total_embeddings: i64,
+    pub stale_embeddings: i64,
+    pub unresolved_refs: i64,
+    pub total_search_runs: i64,
+    pub oldest_object: Option<String>,
+    pub newest_object: Option<String>,
+    pub last_write: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SourceContainerSummary {
+    pub source: String,
+    pub container: String,
+    pub object_count: i64,
+    pub last_updated: Option<String>,
+    pub first_seen: Option<String>,
 }
 
 #[cfg(test)]
