@@ -139,23 +139,67 @@ Every acceptance requirement is satisfied and verified by automated tests and in
 
 ---
 
-## 3. Test Suite Summary
+## 3. Test Suite Summary & Verification Metrics
 
-Total Automated Tests: **45 passed, 0 failed** across all modules and layers:
-- **Unit & Module Tests** (`src/lib.rs`): 10 passed
-- **Connector Tests** (`tests/connector_*.rs`): 4 passed
-- **Data & FTS Tests** (`tests/store_objects.rs`, `tests/fts_traversal.rs`): 5 passed
-- **Search, Traversal & Planner Tests** (`tests/deep_search.rs`, `tests/model_planner.rs`): 9 passed
-- **Ranking Engine Tests** (`tests/ranking.rs`): 5 passed
-- **Web Server & UI Tests** (`tests/web_server.rs`, `tests/ui_pages.rs`, `tests/jobs_sse.rs`, `tests/wizard_settings.rs`): 10 passed
-- **Live End-to-End Test Suite** (`tests/e2e.rs` with `live_e2e`):
-  - `e2e_01_startup_and_onboarding_redirect`: PASSED
-  - `e2e_10_health_api`: PASSED
-  - `e2e_40_security_leak_scan`: PASSED
-  - `e2e_50_memory_and_integrity_check`: PASSED
+Total Automated Verification Tests: **69 passed, 0 failed** across all modules, integration layers, live server end-to-end tests, and headless browser UI tests:
+
+### A. Unit, Component, & Subsystem Integration Tests (41 Tests)
+- **Unit & Core Module Tests** (`src/lib.rs`, `src/search/*.rs`, `src/store/*.rs`): 10 passed
+- **Tracker Connector Isolation Tests** (`tests/connector_*.rs`): 4 passed
+- **SQLite Datastore & FTS5 Indexing Tests** (`tests/store_objects.rs`, `tests/fts_traversal.rs`): 5 passed
+- **Federated Search, Graph Traversal & Query Planner Tests** (`tests/deep_search.rs`, `tests/model_planner.rs`): 9 passed
+- **Hybrid Fusion & Evidence Ranking Tests** (`tests/ranking.rs`): 5 passed
+- **Web Server, Routing & SSE Streaming Tests** (`tests/web_server.rs`, `tests/ui_pages.rs`, `tests/jobs_sse.rs`, `tests/wizard_settings.rs`): 8 passed
+
+### B. Live End-to-End Integration Suite (`tests/e2e/live_e2e.rs`) (17 Tests)
+All tests run against a live release-mode IssueMesh HTTP daemon bound to dynamic loopback sockets (`127.0.0.1:0`) with isolated filesystem sandboxes:
+1. `e2e_01_startup_and_onboarding_redirect`: Verifies unconfigured root `/` strictly returns HTTP 307 redirect to `/setup`, and `/setup` serves HTTP 200 with the onboarding wizard HTML.
+2. `e2e_02_static_assets`: Verifies delivery and MIME types for CSS (`text/css; charset=utf-8`), JS (`application/javascript; charset=utf-8`), and SVG icons; verifies 404 response on missing asset paths.
+3. `e2e_03_onboarding_wizard_and_home_transition`: Submits setup configuration to `POST /api/setup`, verifies `secrets.env` file created with secure POSIX permissions `0600`, and verifies `/` transitions from redirect to serving the home dashboard (HTTP 200).
+4. `e2e_04_ui_pages_availability`: Tests that all core UI routes (`/`, `/settings`, `/memory`, `/sources`, `/health`) return HTTP 200 OK.
+5. `e2e_10_health_api`: Queries `GET /api/health` and verifies that all subsystem health probes (`database`, `github`, `jira`, `launchpad`, `model`) report valid status fields and messages.
+6. `e2e_15_connector_probes`: Tests dedicated probe endpoints for Launchpad (`POST /api/test/launchpad`), GitHub (`POST /api/test/github`), Jira (`POST /api/test/jira`), and LLM Model (`POST /api/test/llm`).
+7. `e2e_20_search_workflow_and_sse`: End-to-end search lifecycle: dispatches search job via `POST /api/search`, connects to SSE event stream (`GET /api/search/{id}/events`), validates step lifecycle progression, checks job status (`GET /api/search/{id}`), retrieves structured result payload (`GET /api/search/{id}/result`), verifies persisted run record (`GET /api/search/{id}/run`), and verifies the HTML run detail page (`GET /search/{id}/run`).
+8. `e2e_22_launchpad_search_and_object_graph`: Executes a live Launchpad search query against public bugs without credentials; verifies tracker search count >= 1 and cross-tracker graph object ingestion.
+9. `e2e_25_local_fts_search`: Queries `GET /api/search/local?q=bug` directly against SQLite FTS5 index and verifies fast local lexical retrieval.
+10. `e2e_30_sources_and_memory_stats`: Verifies `GET /api/sources` correctly reflects enabled trackers, and `GET /api/memory` exposes object counts, relations, disk size, and SQLite FTS status.
+11. `e2e_31_cache_reuse_and_deduplication`: Executes repeat search queries to verify that existing datastore entities are reused, deduplicated, and cached without creating redundant graph nodes.
+12. `e2e_35_memory_maintenance_suite`: Tests the complete memory maintenance lifecycle: `POST /api/memory/integrity` (SQLite quick_check), `POST /api/memory/optimize` (PRAGMA optimize), `POST /api/memory/rebuild-fts` (rebuilds FTS5 virtual tables), `POST /api/memory/purge-stale` (cleans expired cache entries), and `POST /api/memory/clear-history` (purges old search runs).
+13. `e2e_40_security_leak_scan`: Deep-scans every API endpoint and HTML page response body against sensitive credentials loaded from `secrets.env` (tokens with length >= 8); strictly asserts zero unmasked secrets leaked.
+14. `e2e_41_read_only_invariant_and_audit`: Directly connects to `issuemesh.db` via SQLite and inspects the `api_audit` table; verifies that all recorded HTTP tracker calls are strictly read-only (`GET` or allowlisted read-only search `POST`), with zero `PUT`, `PATCH`, or `DELETE` requests.
+15. `e2e_45_input_validation_and_error_handling`: Validates boundary and error handling: rejects empty/whitespace search queries with HTTP 400 Bad Request; returns HTTP 404 Not Found on invalid search job IDs, missing results, and non-existent run records.
+16. `e2e_50_memory_diagnostics_and_sql_reconciliation`: Reconciles `/api/memory` JSON counts against direct SQL queries on `tracker_objects`, `object_relations`, and `search_runs`; verifies SQLite integrity check reports `ok: true`.
+17. `e2e_60_binary_properties_and_isolation`: Executes `target/release/issuemesh --version` to verify CLI startup; runs `ldd` on the release binary to confirm total absence of dynamic library links to `libssl`, `libcrypto`, or `libsqlite3`.
+
+### C. Headless Browser End-to-End Suite (`scripts/browser_e2e.mjs`) (11 Checkpoints)
+Uses native Node 22 WebSockets and Chrome DevTools Protocol (CDP) to drive real headless Google Chrome (`/usr/bin/google-chrome`) through the complete user journey and captures full-page visual artifacts in `docs/screenshots/`:
+1. `01_setup_wizard_welcome.png`: Setup wizard initial step at `/setup`.
+2. `02_setup_wizard_review.png`: Setup wizard final review step showing configured services and paths.
+3. `03_home_search.png`: IssueMesh home dashboard in clean search state.
+4. `04_search_progress.png`: Live search execution with real-time SSE step progression log.
+5. `05_search_results.png`: Completed search results page displaying synthesized answer and ranked evidence cards.
+6. `06_evidence_expanded.png`: Expanded evidence card showing deep cross-tracker references and full snippet.
+7. `07_memory_page.png`: Local memory diagnostics page (`/memory`) with storage statistics and maintenance controls.
+8. `08_sources_page.png`: Connected sources page (`/sources`) with tracker connectivity indicators and capabilities.
+9. `09_health_page.png`: System health dashboard (`/health`) displaying live subsystem probe results.
+10. `10_settings_page.png`: Settings management page (`/settings`) showing configuration parameters and masked secrets.
+11. `11_search_run_detail.png`: Historical search run detail page (`/search/{id}/run`) with timeline audit.
 
 ---
 
-## 4. Conclusion
+## 4. Verification Script (`scripts/verify.sh`)
 
-IssueMesh has been built to full completion, fulfilling every functional and non-functional requirement. The code adheres strictly to the quality gates: clean formatting, zero clippy warnings with `-D warnings`, zero `todo!()` or `unimplemented!()` placeholders, robust test coverage, and a fully hardened read-only connector boundary.
+The authoritative automated verification script [`scripts/verify.sh`](file:///home/cgegout/Documents/Antigravity/issuemesh/scripts/verify.sh) executes all quality gates end-to-end:
+1. `cargo fmt --check`: Clean code formatting.
+2. `cargo clippy --all-targets -- -D warnings`: Zero linter warnings.
+3. Static grep audit: Strictly zero `todo!()` or `unimplemented!()` macros; strictly zero `PUT`, `PATCH`, `DELETE` methods in connector code.
+4. `cargo test --lib --tests`: 41 unit and subsystem integration tests pass.
+5. `cargo build --release`: Clean release compilation producing portable 5.9 MB binary.
+6. `cargo test --release --test e2e`: 17 live end-to-end integration tests pass.
+7. `node scripts/browser_e2e.mjs`: Complete headless Chrome browser automation pass with 11 screenshot captures.
+
+---
+
+## 5. Conclusion
+
+IssueMesh has been built and tested to completion, fulfilling every functional, architectural, and non-functional requirement defined in the design specification. The project features 100% clean formatting, zero warnings, hardened read-only connector boundaries, comprehensive memory maintenance tools, zero secret leaks, and extensive end-to-end automated test coverage across both HTTP APIs and headless browser interfaces.
