@@ -21,37 +21,38 @@ sudo lxd init --auto
 
 ## 2. Building the Snap
 
-IssueMesh builds in a clean, isolated LXD container running Ubuntu 24.04 LTS (`core24`).
+### Option A: Direct Build (Fast & Native)
 
-Run the pack command from the repository root:
+Builds the optimized release binary, stages the full web frontend, SQL datastore schema, desktop integration, and packs the `.snap` directly using the host `snap pack`:
+
+```bash
+./scripts/build_snap.sh
+```
+
+Upon completion, `issuemesh_0.2.8_amd64.snap` is generated in the project root.
+
+### Option B: Isolated LXD Container Build (`snapcraft pack`)
+
+IssueMesh can also build in a clean, isolated LXD container running Ubuntu 24.04 LTS (`core24`):
 
 ```bash
 export SNAPCRAFT_BUILD_INFO=1
 snapcraft pack
 ```
 
-*Note: Never use `--destructive-mode`. Building inside the LXD container guarantees reproducible binaries without host contamination.*
-
-Upon completion, a `.snap` file will be generated in the project root:
-```text
-issuemesh_0.1.0_amd64.snap
-```
-
 ---
 
 ## 3. Installation & Testing
 
-### Initial Testing (Devmode)
-To verify packaging and binary startup without security confinement:
+### Strict Confinement Installation (Recommended)
 ```bash
-sudo snap install --devmode issuemesh_0.1.0_amd64.snap
-issuemesh --version
+sudo snap install --dangerous issuemesh_0.2.8_amd64.snap
 ```
 
-### Strict Confinement Installation
-To test under real AppArmor and SecComp confinement:
+### Initial Testing (Devmode)
 ```bash
-sudo snap install --dangerous issuemesh_0.1.0_amd64.snap
+sudo snap install --devmode issuemesh_0.2.8_amd64.snap
+issuemesh --version
 ```
 
 ---

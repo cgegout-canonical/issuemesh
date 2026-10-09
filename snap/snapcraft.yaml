@@ -1,6 +1,6 @@
 name: issuemesh
 base: core24
-version: '0.2.0'
+version: '0.2.8'
 summary: Autonomous multi-tracker issue intelligence engine
 description: |
   IssueMesh is an autonomous local-first issue intelligence engine that
@@ -8,11 +8,11 @@ description: |
   GitHub, and Jira with deep graph expansion and hybrid ranking.
 grade: stable
 confinement: strict
-license: MIT OR Apache-2.0
+license: MIT
 
 apps:
   issuemesh:
-    command: bin/issuemesh
+    command: bin/issuemesh-launch
     plugs:
       - network
       - network-bind
@@ -25,3 +25,15 @@ parts:
     build-packages:
       - build-essential
       - pkg-config
+    stage-packages:
+      - ca-certificates
+    override-build: |
+      export CFLAGS="-fno-sanitize=undefined -fwrapv"
+      craftctl default
+      mkdir -p $CRAFT_PART_INSTALL/usr/share/issuemesh/static
+      cp -r static/* $CRAFT_PART_INSTALL/usr/share/issuemesh/static/
+      mkdir -p $CRAFT_PART_INSTALL/usr/share/issuemesh/schema
+      cp -r schema/* $CRAFT_PART_INSTALL/usr/share/issuemesh/schema/
+      mkdir -p $CRAFT_PART_INSTALL/bin
+      cp snap/local/issuemesh-launch $CRAFT_PART_INSTALL/bin/issuemesh-launch
+      chmod +x $CRAFT_PART_INSTALL/bin/issuemesh-launch

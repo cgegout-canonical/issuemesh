@@ -1,0 +1,19 @@
+#!/bin/sh
+set -e
+
+# IssueMesh Snap Environment Launcher
+# Configures relocatable state under $SNAP_USER_COMMON and starts IssueMesh
+
+# Default data directory to $SNAP_USER_COMMON under snap confinement
+if [ -n "$SNAP_USER_COMMON" ]; then
+    mkdir -p "$SNAP_USER_COMMON"
+    chmod 700 "$SNAP_USER_COMMON" 2>/dev/null || true
+
+    # Provide reference SQL datastore schema if not already present
+    if [ ! -f "$SNAP_USER_COMMON/schema.sql" ] && [ -f "$SNAP/usr/share/issuemesh/schema/schema.sql" ]; then
+        cp "$SNAP/usr/share/issuemesh/schema/schema.sql" "$SNAP_USER_COMMON/schema.sql" 2>/dev/null || true
+    fi
+fi
+
+# Execute the compiled IssueMesh binary with all passed CLI arguments
+exec "$SNAP/bin/issuemesh" "$@"

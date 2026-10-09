@@ -1,6 +1,6 @@
 [package]
 name = "issuemesh"
-version = "0.2.7"
+version = "0.2.8"
 edition = "2021"
 description = "Local engineering issue intelligence across GitHub, Jira and Launchpad"
 authors = ["IssueMesh Authors"]

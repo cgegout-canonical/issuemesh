@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Name=IssueMesh
+GenericName=Issue Intelligence Engine
+Comment=Autonomous multi-tracker issue intelligence across GitHub, Jira, and Launchpad
+Exec=issuemesh
+Icon=${SNAP}/meta/gui/icon.svg
+Terminal=true
+Type=Application
+Categories=Development;Utility;Network;
+Keywords=issue;github;jira;launchpad;search;mesh;intelligence;
+StartupNotify=true

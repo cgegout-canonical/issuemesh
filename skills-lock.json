@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "skills": {
+    "snap-analyzer": {
+      "source": "rascheel/scheel-skills",
+      "sourceType": "github",
+      "skillPath": "snap-analyzer/SKILL.md",
+      "computedHash": "495f6942a6506fa692e0a6d7d5707854a865be3f835c4340d12ceb75eb602a5b"
+    },
+    "snap-builder": {
+      "source": "rascheel/scheel-skills",
+      "sourceType": "github",
+      "skillPath": "snap-builder/SKILL.md",
+      "computedHash": "c76e44119f1ca012f0d4d855f210e0050e03e5822c11dd9877eed0cbd35c71ae"
+    },
+    "snap-oci-analyzer": {
+      "source": "rascheel/scheel-skills",
+      "sourceType": "github",
+      "skillPath": "snap-oci-analyzer/SKILL.md",
+      "computedHash": "bb87f0225921bb0864a71f247e3ae238894a1798f5eaf57d8713e2e6388f097e"
+    },
+    "snap-publisher": {
+      "source": "rascheel/scheel-skills",
+      "sourceType": "github",
+      "skillPath": "snap-publisher/SKILL.md",
+      "computedHash": "a72cc998e5e5ad925e18f86a72b1a2f4e97718013ba63f8eb21158bca6ad5fa3"
+    },
+    "snap-trimmer": {
+      "source": "rascheel/scheel-skills",
+      "sourceType": "github",
+      "skillPath": "snap-trimmer/SKILL.md",
+      "computedHash": "3c5ce754e2909fccd458362f946d207c1aaf98ce4cd25a15e888fa3fbad6c5a1"
+    },
+    "snap-validator": {
+      "source": "rascheel/scheel-skills",
+      "sourceType": "github",
+      "skillPath": "snap-validator/SKILL.md",
+      "computedHash": "c3e82dd9908652ea3ec2f256da57fed814ddb0bc2943b6941ed561c1afcdf908"
+    },
+    "snapcraft-author": {
+      "source": "rascheel/scheel-skills",
+      "sourceType": "github",
+      "skillPath": "snapcraft-author/SKILL.md",
+      "computedHash": "231d7ed9b8ade211065d09bfcbcbb54721118fdbff029bc39ec7a2deb3810ed3"
+    }
+  }
+}
