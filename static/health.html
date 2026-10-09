@@ -23,6 +23,7 @@
             <a href="/">Search</a>
             <a href="/memory">Memory</a>
             <a href="/sources">Sources</a>
+            <a href="/introspection">Introspection</a>
             <a href="/health" class="active">Health</a>
             <a href="/settings">Settings</a>
         </nav>
@@ -64,20 +65,51 @@
                     const dotClass = !probe.enabled ? 'dot-idle' : (probe.ok ? 'dot-healthy' : 'dot-unhealthy');
                     const statusText = !probe.enabled ? 'Disabled' : (probe.ok ? 'Healthy' : 'Error');
 
-                    html += `
-                        <div class="card">
-                            <div class="probe-header">
-                                <h3 style="text-transform: capitalize; font-size: 1.1rem;">${key}</h3>
-                                <div class="probe-status">
-                                    <span class="dot ${dotClass}"></span>
-                                    <span>${statusText}</span>
+                    if (key === 'introspection') {
+                        const lastSucc = probe.last_successful ? new Date(probe.last_successful).toLocaleString() : 'None yet';
+                        const nextExp = probe.next_expected ? new Date(probe.next_expected).toLocaleString() : (probe.enabled ? 'Quota reached or pending' : 'Disabled');
+                        html += `
+                            <div class="card" style="border-top: 3px solid var(--color-aubergine);">
+                                <div class="probe-header">
+                                    <h3 style="font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem;">
+                                        Introspection Engine
+                                    </h3>
+                                    <div class="probe-status">
+                                        <span class="dot ${dotClass}"></span>
+                                        <span>${statusText}</span>
+                                    </div>
+                                </div>
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.6rem; margin-top: 0.8rem; font-size: 0.88rem;">
+                                    <div><strong>Status:</strong> <span style="text-transform: capitalize;">${escapeHtml(probe.status || statusText)}</span></div>
+                                    <div><strong>Level:</strong> ${probe.level !== undefined ? probe.level : '-'} (${escapeHtml(probe.level_name || 'Custom')})</div>
+                                    <div><strong>Questions / Day:</strong> ${probe.questions_per_day !== undefined ? probe.questions_per_day : '-'}</div>
+                                    <div><strong>Questions Today:</strong> ${probe.questions_today !== undefined ? probe.questions_today : 0}</div>
+                                    <div><strong>Scheduler:</strong> ${escapeHtml(probe.scheduler || 'Unknown')}</div>
+                                    <div><strong>Failures Today:</strong> ${probe.failures_today !== undefined ? probe.failures_today : 0}</div>
+                                    <div style="grid-column: 1 / -1;"><strong>Last Successful:</strong> ${escapeHtml(lastSucc)}</div>
+                                    <div style="grid-column: 1 / -1;"><strong>Next Expected:</strong> ${escapeHtml(nextExp)}</div>
+                                </div>
+                                <div style="margin-top: 0.9rem; padding-top: 0.6rem; border-top: 1px solid var(--color-border-grey); display: flex; justify-content: flex-end;">
+                                    <a href="/introspection" style="color: var(--color-orange); text-decoration: none; font-size: 0.88rem; font-weight: 500;">Open Introspection Dashboard &rarr;</a>
                                 </div>
                             </div>
-                            <div style="margin-bottom: 0.5rem;" class="probe-latency">Latency: ${probe.latency_ms} ms</div>
-                            <div class="probe-detail">${escapeHtml(probe.detail)}</div>
-                            ${probe.rate_limit_remaining !== undefined && probe.rate_limit_remaining !== null ? `<div style="margin-top: 0.5rem; font-size: 0.85rem; color: var(--color-muted-text);">Rate limit remaining: ${probe.rate_limit_remaining}</div>` : ''}
-                        </div>
-                    `;
+                        `;
+                    } else {
+                        html += `
+                            <div class="card">
+                                <div class="probe-header">
+                                    <h3 style="text-transform: capitalize; font-size: 1.1rem;">${key}</h3>
+                                    <div class="probe-status">
+                                        <span class="dot ${dotClass}"></span>
+                                        <span>${statusText}</span>
+                                    </div>
+                                </div>
+                                <div style="margin-bottom: 0.5rem;" class="probe-latency">Latency: ${probe.latency_ms} ms</div>
+                                <div class="probe-detail">${escapeHtml(probe.detail)}</div>
+                                ${probe.rate_limit_remaining !== undefined && probe.rate_limit_remaining !== null ? `<div style="margin-top: 0.5rem; font-size: 0.85rem; color: var(--color-muted-text);">Rate limit remaining: ${probe.rate_limit_remaining}</div>` : ''}
+                            </div>
+                        `;
+                    }
                 }
 
                 container.innerHTML = html;

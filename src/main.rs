@@ -70,8 +70,12 @@ async fn main() -> Result<()> {
         secrets: Arc::new(RwLock::new(secrets)),
         store,
         jobs: issuemesh::jobs::JobManager::new(),
+        introspection: issuemesh::introspection::IntrospectionScheduler::new(),
         search_results: Arc::new(RwLock::new(std::collections::HashMap::new())),
     };
+
+    // Start background introspection scheduler if enabled
+    app_state.introspection.start(Arc::new(app_state.clone()));
 
     println!("IssueMesh {}", env!("CARGO_PKG_VERSION"));
     println!();
@@ -114,6 +118,7 @@ async fn main() -> Result<()> {
                 "disabled"
             }
         );
+        println!("Introspection {}", config.introspection.level_name());
         println!();
         println!("Web UI:");
         println!("http://{}:{}", bind_addr, port);

@@ -30,10 +30,24 @@ pub fn build_router(state: AppState) -> Router {
         .route("/settings", get(settings_page_handler))
         .route("/memory", get(memory_page_handler))
         .route("/sources", get(sources_page_handler))
+        .route("/introspection", get(introspection_page_handler))
+        .route(
+            "/about-introspection",
+            get(about_introspection_page_handler),
+        )
         .route("/search/{id}/run", get(search_run_page_handler))
         // API routes
         .route("/api/health", get(health_api_handler))
         .route("/api/stats", get(stats_handler))
+        .route("/api/introspection", get(get_introspection_handler))
+        .route(
+            "/api/introspection/{id}",
+            get(get_introspection_run_handler),
+        )
+        .route(
+            "/api/introspection/trigger",
+            post(trigger_introspection_handler),
+        )
         .route("/api/search/local", get(local_search_handler))
         .route(
             "/api/search",
@@ -157,6 +171,20 @@ async fn search_run_page_handler() -> impl IntoResponse {
     match Assets::get("run.html") {
         Some(content) => Html(content.data).into_response(),
         None => (StatusCode::NOT_FOUND, "run.html not found").into_response(),
+    }
+}
+
+async fn introspection_page_handler() -> impl IntoResponse {
+    match Assets::get("introspection.html") {
+        Some(content) => Html(content.data).into_response(),
+        None => (StatusCode::NOT_FOUND, "introspection.html not found").into_response(),
+    }
+}
+
+async fn about_introspection_page_handler() -> impl IntoResponse {
+    match Assets::get("about-introspection.html") {
+        Some(content) => Html(content.data).into_response(),
+        None => (StatusCode::NOT_FOUND, "about-introspection.html not found").into_response(),
     }
 }
 
@@ -348,6 +376,46 @@ pub async fn run_live_probes(state: &AppState) -> serde_json::Value {
         rate_limit_remaining: None,
     };
 
+    // 6. Introspection Probe
+    let intro_level = cfg.introspection.level;
+    let questions_per_day = cfg.introspection.questions_per_day();
+    let questions_today = state
+        .store
+        .count_introspection_runs_today()
+        .await
+        .unwrap_or(0);
+    let last_successful = state.introspection.last_run_at.read().await.clone();
+    let next_expected = state.introspection.next_expected_at.read().await.clone();
+    let failures_today = state
+        .introspection
+        .failures_today
+        .load(std::sync::atomic::Ordering::SeqCst);
+    let scheduler_status = state.introspection.scheduler_status.read().await.clone();
+
+    let intro_status = if intro_level == 0 {
+        "disabled"
+    } else if failures_today > 0 && questions_today == 0 {
+        "degraded"
+    } else {
+        "healthy"
+    };
+
+    let introspection_probe = serde_json::json!({
+        "enabled": intro_level > 0,
+        "ok": intro_status != "degraded",
+        "detail": format!("Level {} ({}), {}/day, {} today", intro_level, cfg.introspection.level_name(), questions_per_day, questions_today),
+        "latency_ms": 0,
+        "status": intro_status,
+        "level": intro_level,
+        "level_name": cfg.introspection.level_name(),
+        "questions_per_day": questions_per_day,
+        "questions_today": questions_today,
+        "last_successful": last_successful,
+        "next_expected": next_expected,
+        "failures_today": failures_today,
+        "scheduler": scheduler_status,
+    });
+
     serde_json::json!({
         "status": if db_probe.ok { "healthy" } else { "degraded" },
         "version": env!("CARGO_PKG_VERSION"),
@@ -357,6 +425,7 @@ pub async fn run_live_probes(state: &AppState) -> serde_json::Value {
             "jira": jira_probe,
             "launchpad": lp_probe,
             "model": model_probe,
+            "introspection": introspection_probe,
         }
     })
 }
@@ -374,6 +443,200 @@ async fn stats_handler(State(state): State<Arc<AppState>>) -> Response {
             Json(serde_json::json!({ "error": e.to_string() })),
         )
             .into_response(),
+    }
+}
+
+async fn get_introspection_handler(State(state): State<Arc<AppState>>) -> Response {
+    let cfg = state.config.read().await.clone();
+    let level = cfg.introspection.level;
+    let level_name = cfg.introspection.level_name();
+    let questions_per_day = cfg.introspection.questions_per_day();
+    let questions_today = state
+        .store
+        .count_introspection_runs_today()
+        .await
+        .unwrap_or(0);
+    let last_run = state.introspection.last_run_at.read().await.clone();
+    let next_expected = state.introspection.next_expected_at.read().await.clone();
+    let is_running = state
+        .introspection
+        .is_running
+        .load(std::sync::atomic::Ordering::SeqCst);
+    let scheduler_status = state.introspection.scheduler_status.read().await.clone();
+
+    let stats = match state.store.get_introspection_stats().await {
+        Ok(s) => serde_json::to_value(s).unwrap_or(serde_json::json!({})),
+        Err(e) => {
+            tracing::warn!("Failed to get introspection stats: {e}");
+            serde_json::json!({})
+        }
+    };
+
+    let trends = match state.store.get_introspection_trends(7).await {
+        Ok(t) => serde_json::to_value(t).unwrap_or(serde_json::json!([])),
+        Err(e) => {
+            tracing::warn!("Failed to get introspection trends: {e}");
+            serde_json::json!([])
+        }
+    };
+
+    let runs = match state.store.list_introspection_runs(50).await {
+        Ok(r) => {
+            let mut list = Vec::new();
+            for item in r {
+                let prob_areas: Vec<String> =
+                    serde_json::from_str(&item.problem_areas_json).unwrap_or_default();
+                let ev_keys: Vec<String> =
+                    serde_json::from_str(&item.evidence_keys_json).unwrap_or_default();
+                let eval_details: serde_json::Value =
+                    serde_json::from_str(&item.evaluation_details_json)
+                        .unwrap_or(serde_json::json!({}));
+                list.push(serde_json::json!({
+                    "id": item.id,
+                    "created_at": item.created_at,
+                    "question": item.question,
+                    "question_fingerprint": item.question_fingerprint,
+                    "trigger_reason": item.trigger_reason,
+                    "search_run_id": item.search_run_id,
+                    "accuracy": item.accuracy,
+                    "relevance": item.relevance,
+                    "coverage": item.coverage,
+                    "traceability": item.traceability,
+                    "conciseness": item.conciseness,
+                    "weighted_score": item.weighted_score,
+                    "percentage": item.percentage,
+                    "result": item.result,
+                    "interpretation": item.interpretation,
+                    "answer": item.answer,
+                    "problem_areas": prob_areas,
+                    "recommendation": item.recommendation,
+                    "evidence_keys": ev_keys,
+                    "evaluation_details": eval_details,
+                }));
+            }
+            serde_json::Value::Array(list)
+        }
+        Err(e) => {
+            tracing::warn!("Failed to list introspection runs: {e}");
+            serde_json::json!([])
+        }
+    };
+
+    Json(serde_json::json!({
+        "level": level,
+        "level_name": level_name,
+        "questions_per_day": questions_per_day,
+        "questions_today": questions_today,
+        "last_run": last_run,
+        "next_expected": next_expected,
+        "is_running": is_running,
+        "scheduler_status": scheduler_status,
+        "stats": stats,
+        "trends": trends,
+        "runs": runs,
+    }))
+    .into_response()
+}
+
+async fn get_introspection_run_handler(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    match state.store.get_introspection_run(&id).await {
+        Ok(Some(item)) => {
+            let prob_areas: Vec<String> =
+                serde_json::from_str(&item.problem_areas_json).unwrap_or_default();
+            let ev_keys: Vec<String> =
+                serde_json::from_str(&item.evidence_keys_json).unwrap_or_default();
+            let eval_details: serde_json::Value =
+                serde_json::from_str(&item.evaluation_details_json)
+                    .unwrap_or(serde_json::json!({}));
+            Json(serde_json::json!({
+                "id": item.id,
+                "created_at": item.created_at,
+                "question": item.question,
+                "question_fingerprint": item.question_fingerprint,
+                "trigger_reason": item.trigger_reason,
+                "search_run_id": item.search_run_id,
+                "accuracy": item.accuracy,
+                "relevance": item.relevance,
+                "coverage": item.coverage,
+                "traceability": item.traceability,
+                "conciseness": item.conciseness,
+                "weighted_score": item.weighted_score,
+                "percentage": item.percentage,
+                "result": item.result,
+                "interpretation": item.interpretation,
+                "answer": item.answer,
+                "problem_areas": prob_areas,
+                "recommendation": item.recommendation,
+                "evidence_keys": ev_keys,
+                "evaluation_details": eval_details,
+            }))
+            .into_response()
+        }
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Run not found" })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn trigger_introspection_handler(State(state): State<Arc<AppState>>) -> Response {
+    match state.introspection.trigger_now(state.clone()).await {
+        Ok(record) => {
+            let prob_areas: Vec<String> =
+                serde_json::from_str(&record.problem_areas_json).unwrap_or_default();
+            let ev_keys: Vec<String> =
+                serde_json::from_str(&record.evidence_keys_json).unwrap_or_default();
+            let eval_details: serde_json::Value =
+                serde_json::from_str(&record.evaluation_details_json)
+                    .unwrap_or(serde_json::json!({}));
+            Json(serde_json::json!({
+                "ok": true,
+                "run": {
+                    "id": record.id,
+                    "created_at": record.created_at,
+                    "question": record.question,
+                    "question_fingerprint": record.question_fingerprint,
+                    "trigger_reason": record.trigger_reason,
+                    "search_run_id": record.search_run_id,
+                    "accuracy": record.accuracy,
+                    "relevance": record.relevance,
+                    "coverage": record.coverage,
+                    "traceability": record.traceability,
+                    "conciseness": record.conciseness,
+                    "weighted_score": record.weighted_score,
+                    "percentage": record.percentage,
+                    "result": record.result,
+                    "interpretation": record.interpretation,
+                    "answer": record.answer,
+                    "problem_areas": prob_areas,
+                    "recommendation": record.recommendation,
+                    "evidence_keys": ev_keys,
+                    "evaluation_details": eval_details,
+                }
+            }))
+            .into_response()
+        }
+        Err(e) => {
+            let status = if e.to_string().contains("already actively executing") {
+                StatusCode::CONFLICT
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            };
+            (
+                status,
+                Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -761,12 +1024,18 @@ fn default_true() -> bool {
 }
 
 #[derive(Deserialize, Serialize, Clone, Default)]
+pub struct IntrospectionForm {
+    pub level: Option<u8>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Default)]
 pub struct SettingsPayload {
     pub github: GitHubForm,
     pub jira: JiraForm,
     pub launchpad: LaunchpadForm,
     pub model: ModelForm,
     pub search: SearchForm,
+    pub introspection: Option<IntrospectionForm>,
 }
 
 async fn get_settings_handler(State(state): State<Arc<AppState>>) -> Response {
@@ -850,6 +1119,12 @@ async fn apply_settings_update(
         }
         if let Some(r) = payload.search.max_deep_reads {
             cfg.search.max_deep_reads = r;
+        }
+
+        if let Some(intro) = payload.introspection {
+            if let Some(lvl) = intro.level {
+                cfg.introspection.level = lvl.min(4);
+            }
         }
 
         if let Err(e) = cfg.save(&state.paths.config_file) {

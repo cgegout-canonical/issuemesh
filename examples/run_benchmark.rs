@@ -4,9 +4,7 @@ use issuemesh::paths::Paths;
 use issuemesh::search::orchestrator::SearchOrchestrator;
 use issuemesh::store::Store;
 use issuemesh::AppState;
-use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 const QUESTIONS: &[&str] = &[
     "What is the current status of OPEN-4679, and what work remains?",
@@ -51,14 +49,7 @@ async fn main() -> Result<()> {
     let secrets = Secrets::load_from_file(&paths.secrets_file)?;
     let store = Store::open(&paths.db_file)?;
 
-    let app_state = Arc::new(AppState {
-        paths: paths.clone(),
-        config: Arc::new(RwLock::new(config)),
-        secrets: Arc::new(RwLock::new(secrets)),
-        store,
-        jobs: issuemesh::jobs::JobManager::new(),
-        search_results: Arc::new(RwLock::new(HashMap::new())),
-    });
+    let app_state = Arc::new(AppState::new(paths.clone(), config, secrets, store));
 
     std::fs::create_dir_all("/tmp/benchmark_results")?;
 

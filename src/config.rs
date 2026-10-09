@@ -26,6 +26,9 @@ pub struct Config {
 
     #[serde(default)]
     pub model: ModelConfig,
+
+    #[serde(default)]
+    pub introspection: IntrospectionConfig,
 }
 
 fn default_onboarding_completed() -> bool {
@@ -156,6 +159,48 @@ pub struct ModelConfig {
     pub model: Option<String>,
     pub embedding_model: Option<String>,
     pub system_prompt: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntrospectionConfig {
+    #[serde(default = "default_introspection_level")]
+    pub level: u8,
+}
+
+fn default_introspection_level() -> u8 {
+    2
+}
+
+impl Default for IntrospectionConfig {
+    fn default() -> Self {
+        Self {
+            level: default_introspection_level(),
+        }
+    }
+}
+
+impl IntrospectionConfig {
+    pub fn level_name(&self) -> &'static str {
+        match self.level {
+            0 => "None",
+            1 => "Light",
+            2 => "Reasonable",
+            3 => "Curious",
+            4 => "Introvert!!",
+            _ => "Reasonable",
+        }
+    }
+
+    pub fn questions_per_day(&self) -> u32 {
+        match self.level {
+            0 => 0,
+            1 => 2,
+            2 => 4,
+            3 => 7,
+            4 => 10,
+            _ => 4,
+        }
+    }
 }
 
 impl Config {

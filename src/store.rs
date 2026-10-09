@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tokio::task;
 
-const CURRENT_SCHEMA_VERSION: i64 = 1;
+const CURRENT_SCHEMA_VERSION: i64 = 2;
 
 pub const MIGRATION_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -126,6 +126,35 @@ CREATE TABLE IF NOT EXISTS api_audit (
 CREATE INDEX IF NOT EXISTS idx_api_audit_source ON api_audit(source);
 "#;
 
+pub const MIGRATION_V2: &str = r#"
+CREATE TABLE IF NOT EXISTS introspection_runs (
+    id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    question TEXT NOT NULL,
+    question_fingerprint TEXT NOT NULL,
+    trigger_reason TEXT NOT NULL,
+    search_run_id TEXT,
+    accuracy REAL NOT NULL,
+    relevance REAL NOT NULL,
+    coverage REAL NOT NULL,
+    traceability REAL NOT NULL,
+    conciseness REAL NOT NULL,
+    weighted_score REAL NOT NULL,
+    percentage REAL NOT NULL,
+    result TEXT NOT NULL,
+    interpretation TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    problem_areas_json TEXT NOT NULL,
+    recommendation TEXT NOT NULL,
+    evidence_keys_json TEXT NOT NULL,
+    evaluation_details_json TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_introspection_runs_created_at ON introspection_runs(created_at);
+CREATE INDEX IF NOT EXISTS idx_introspection_runs_fingerprint ON introspection_runs(question_fingerprint);
+CREATE INDEX IF NOT EXISTS idx_introspection_runs_result ON introspection_runs(result);
+"#;
+
 #[derive(Clone)]
 pub struct Store {
     conn: Arc<Mutex<Connection>>,
@@ -182,9 +211,20 @@ impl Store {
                 .context("Failed to apply migration v1")?;
             conn.execute(
                 "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?1, ?2)",
+                rusqlite::params![1, now],
+            )
+            .context("Failed to record schema version 1")?;
+        }
+
+        if current_version < 2 {
+            let now = chrono::Utc::now().to_rfc3339();
+            conn.execute_batch(MIGRATION_V2)
+                .context("Failed to apply migration v2")?;
+            conn.execute(
+                "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?1, ?2)",
                 rusqlite::params![CURRENT_SCHEMA_VERSION, now],
             )
-            .context("Failed to record schema version")?;
+            .context("Failed to record schema version 2")?;
         }
 
         Ok(())
@@ -1415,6 +1455,406 @@ impl Store {
         })
         .await
     }
+
+    // -----------------------------------------------------------------------
+    // Introspection Methods
+    // -----------------------------------------------------------------------
+
+    pub async fn save_introspection_run(&self, run: IntrospectionRunRecord) -> Result<()> {
+        self.call(move |conn| {
+            conn.execute(
+                "INSERT INTO introspection_runs (
+                    id, created_at, question, question_fingerprint, trigger_reason,
+                    search_run_id, accuracy, relevance, coverage, traceability,
+                    conciseness, weighted_score, percentage, result, interpretation,
+                    answer, problem_areas_json, recommendation, evidence_keys_json, evaluation_details_json
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+                rusqlite::params![
+                    &run.id,
+                    &run.created_at,
+                    &run.question,
+                    &run.question_fingerprint,
+                    &run.trigger_reason,
+                    run.search_run_id.as_deref(),
+                    run.accuracy,
+                    run.relevance,
+                    run.coverage,
+                    run.traceability,
+                    run.conciseness,
+                    run.weighted_score,
+                    run.percentage,
+                    &run.result,
+                    &run.interpretation,
+                    &run.answer,
+                    &run.problem_areas_json,
+                    &run.recommendation,
+                    &run.evidence_keys_json,
+                    &run.evaluation_details_json,
+                ],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    pub async fn get_introspection_run(&self, id: &str) -> Result<Option<IntrospectionRunRecord>> {
+        let id = id.to_string();
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, created_at, question, question_fingerprint, trigger_reason,
+                        search_run_id, accuracy, relevance, coverage, traceability,
+                        conciseness, weighted_score, percentage, result, interpretation,
+                        answer, problem_areas_json, recommendation, evidence_keys_json, evaluation_details_json
+                 FROM introspection_runs WHERE id = ?1",
+            )?;
+
+            let res = stmt.query_row(rusqlite::params![&id], |row| {
+                Ok(IntrospectionRunRecord {
+                    id: row.get(0)?,
+                    created_at: row.get(1)?,
+                    question: row.get(2)?,
+                    question_fingerprint: row.get(3)?,
+                    trigger_reason: row.get(4)?,
+                    search_run_id: row.get(5)?,
+                    accuracy: row.get(6)?,
+                    relevance: row.get(7)?,
+                    coverage: row.get(8)?,
+                    traceability: row.get(9)?,
+                    conciseness: row.get(10)?,
+                    weighted_score: row.get(11)?,
+                    percentage: row.get(12)?,
+                    result: row.get(13)?,
+                    interpretation: row.get(14)?,
+                    answer: row.get(15)?,
+                    problem_areas_json: row.get(16)?,
+                    recommendation: row.get(17)?,
+                    evidence_keys_json: row.get(18)?,
+                    evaluation_details_json: row.get(19)?,
+                })
+            });
+
+            match res {
+                Ok(r) => Ok(Some(r)),
+                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                Err(e) => Err(e.into()),
+            }
+        })
+        .await
+    }
+
+    pub async fn list_introspection_runs(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<IntrospectionRunRecord>> {
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, created_at, question, question_fingerprint, trigger_reason,
+                        search_run_id, accuracy, relevance, coverage, traceability,
+                        conciseness, weighted_score, percentage, result, interpretation,
+                        answer, problem_areas_json, recommendation, evidence_keys_json, evaluation_details_json
+                 FROM introspection_runs ORDER BY created_at DESC LIMIT ?1",
+            )?;
+
+            let rows = stmt.query_map(rusqlite::params![limit as i64], |row| {
+                Ok(IntrospectionRunRecord {
+                    id: row.get(0)?,
+                    created_at: row.get(1)?,
+                    question: row.get(2)?,
+                    question_fingerprint: row.get(3)?,
+                    trigger_reason: row.get(4)?,
+                    search_run_id: row.get(5)?,
+                    accuracy: row.get(6)?,
+                    relevance: row.get(7)?,
+                    coverage: row.get(8)?,
+                    traceability: row.get(9)?,
+                    conciseness: row.get(10)?,
+                    weighted_score: row.get(11)?,
+                    percentage: row.get(12)?,
+                    result: row.get(13)?,
+                    interpretation: row.get(14)?,
+                    answer: row.get(15)?,
+                    problem_areas_json: row.get(16)?,
+                    recommendation: row.get(17)?,
+                    evidence_keys_json: row.get(18)?,
+                    evaluation_details_json: row.get(19)?,
+                })
+            })?;
+
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    pub async fn count_introspection_runs_today(&self) -> Result<u32> {
+        let today_utc = chrono::Utc::now()
+            .date_naive()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .to_rfc3339();
+
+        self.call(move |conn| {
+            let count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM introspection_runs WHERE created_at >= ?1",
+                rusqlite::params![&today_utc],
+                |r| r.get(0),
+            )?;
+            Ok(count as u32)
+        })
+        .await
+    }
+
+    pub async fn get_last_introspection_run(&self) -> Result<Option<IntrospectionRunRecord>> {
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, created_at, question, question_fingerprint, trigger_reason,
+                        search_run_id, accuracy, relevance, coverage, traceability,
+                        conciseness, weighted_score, percentage, result, interpretation,
+                        answer, problem_areas_json, recommendation, evidence_keys_json, evaluation_details_json
+                 FROM introspection_runs ORDER BY created_at DESC LIMIT 1",
+            )?;
+
+            let res = stmt.query_row([], |row| {
+                Ok(IntrospectionRunRecord {
+                    id: row.get(0)?,
+                    created_at: row.get(1)?,
+                    question: row.get(2)?,
+                    question_fingerprint: row.get(3)?,
+                    trigger_reason: row.get(4)?,
+                    search_run_id: row.get(5)?,
+                    accuracy: row.get(6)?,
+                    relevance: row.get(7)?,
+                    coverage: row.get(8)?,
+                    traceability: row.get(9)?,
+                    conciseness: row.get(10)?,
+                    weighted_score: row.get(11)?,
+                    percentage: row.get(12)?,
+                    result: row.get(13)?,
+                    interpretation: row.get(14)?,
+                    answer: row.get(15)?,
+                    problem_areas_json: row.get(16)?,
+                    recommendation: row.get(17)?,
+                    evidence_keys_json: row.get(18)?,
+                    evaluation_details_json: row.get(19)?,
+                })
+            });
+
+            match res {
+                Ok(r) => Ok(Some(r)),
+                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                Err(e) => Err(e.into()),
+            }
+        })
+        .await
+    }
+
+    pub async fn has_question_fingerprint_recently(
+        &self,
+        fingerprint: &str,
+        days: i64,
+    ) -> Result<bool> {
+        let fingerprint = fingerprint.to_string();
+        let cutoff = (chrono::Utc::now() - chrono::Duration::days(days)).to_rfc3339();
+        self.call(move |conn| {
+            let count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM introspection_runs WHERE question_fingerprint = ?1 AND created_at >= ?2",
+                rusqlite::params![&fingerprint, &cutoff],
+                |r| r.get(0),
+            )?;
+            Ok(count > 0)
+        })
+        .await
+    }
+
+    pub async fn get_introspection_stats(&self) -> Result<IntrospectionStatsSummary> {
+        let seven_days_ago = (chrono::Utc::now() - chrono::Duration::days(7)).to_rfc3339();
+        let today_utc = chrono::Utc::now()
+            .date_naive()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .to_rfc3339();
+
+        self.call(move |conn| {
+            let (avg_score, total_count, pass_count, weak_count, fail_count): (
+                Option<f64>,
+                i64,
+                i64,
+                i64,
+                i64,
+            ) = conn.query_row(
+                "SELECT
+                    AVG(weighted_score),
+                    COUNT(*),
+                    COALESCE(SUM(CASE WHEN result = 'PASS' THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN result = 'WEAK' THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN result = 'FAIL' THEN 1 ELSE 0 END), 0)
+                 FROM introspection_runs
+                 WHERE created_at >= ?1",
+                rusqlite::params![&seven_days_ago],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )?;
+
+            let runs_today: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM introspection_runs WHERE created_at >= ?1",
+                rusqlite::params![&today_utc],
+                |r| r.get(0),
+            )?;
+
+            let last_run_at: Option<String> = conn
+                .query_row(
+                    "SELECT created_at FROM introspection_runs ORDER BY created_at DESC LIMIT 1",
+                    [],
+                    |r| r.get(0),
+                )
+                .ok();
+
+            Ok(IntrospectionStatsSummary {
+                seven_day_average: avg_score.unwrap_or(0.0),
+                pass_count: pass_count as u32,
+                weak_count: weak_count as u32,
+                fail_count: fail_count as u32,
+                total_count: total_count as u32,
+                runs_today: runs_today as u32,
+                last_run_at,
+            })
+        })
+        .await
+    }
+
+    pub async fn get_introspection_trends(
+        &self,
+        days: usize,
+    ) -> Result<Vec<IntrospectionDailyBucket>> {
+        let cutoff = (chrono::Utc::now() - chrono::Duration::days(days as i64)).to_rfc3339();
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT
+                    substr(created_at, 1, 10) as day,
+                    COUNT(*),
+                    AVG(weighted_score),
+                    AVG(accuracy),
+                    AVG(relevance),
+                    AVG(coverage),
+                    AVG(traceability),
+                    COALESCE(SUM(CASE WHEN result = 'PASS' THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN result = 'WEAK' THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN result = 'FAIL' THEN 1 ELSE 0 END), 0)
+                 FROM introspection_runs
+                 WHERE created_at >= ?1
+                 GROUP BY day
+                 ORDER BY day ASC",
+            )?;
+
+            let rows = stmt.query_map(rusqlite::params![&cutoff], |r| {
+                Ok(IntrospectionDailyBucket {
+                    date: r.get(0)?,
+                    count: r.get::<_, i64>(1)? as u32,
+                    average_score: r.get::<_, Option<f64>>(2)?.unwrap_or(0.0),
+                    average_accuracy: r.get::<_, Option<f64>>(3)?.unwrap_or(0.0),
+                    average_relevance: r.get::<_, Option<f64>>(4)?.unwrap_or(0.0),
+                    average_coverage: r.get::<_, Option<f64>>(5)?.unwrap_or(0.0),
+                    average_traceability: r.get::<_, Option<f64>>(6)?.unwrap_or(0.0),
+                    pass_count: r.get::<_, i64>(7)? as u32,
+                    weak_count: r.get::<_, i64>(8)? as u32,
+                    fail_count: r.get::<_, i64>(9)? as u32,
+                })
+            })?;
+
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    pub async fn get_introspection_recent_objects(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<(String, String, String, String, String)>> {
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT object_key, title, source, container, state FROM objects ORDER BY updated_at DESC LIMIT ?1"
+            )?;
+            let rows = stmt.query_map(rusqlite::params![limit as i64], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            })?;
+            let mut out = Vec::new();
+            for r in rows { out.push(r?); }
+            Ok(out)
+        }).await
+    }
+
+    pub async fn get_introspection_low_confidence_relations(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<(String, String, String, f64)>> {
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT from_key, to_key, relation_type, confidence FROM relations WHERE confidence < 0.85 ORDER BY confidence ASC LIMIT ?1"
+            )?;
+            let rows = stmt.query_map(rusqlite::params![limit as i64], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+            })?;
+            let mut out = Vec::new();
+            for r in rows { out.push(r?); }
+            Ok(out)
+        }).await
+    }
+
+    pub async fn get_introspection_unresolved_refs(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<(String, String, String)>> {
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT target_id, discovered_from_key, source FROM unresolved_refs WHERE resolved = 0 LIMIT ?1"
+            )?;
+            let rows = stmt.query_map(rusqlite::params![limit as i64], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })?;
+            let mut out = Vec::new();
+            for r in rows { out.push(r?); }
+            Ok(out)
+        }).await
+    }
+
+    pub async fn get_introspection_weak_or_fail_runs(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<(String, String, String)>> {
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT question, result, problem_areas_json FROM introspection_runs WHERE result IN ('WEAK', 'FAIL') ORDER BY created_at DESC LIMIT ?1"
+            )?;
+            let rows = stmt.query_map(rusqlite::params![limit as i64], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })?;
+            let mut out = Vec::new();
+            for r in rows { out.push(r?); }
+            Ok(out)
+        }).await
+    }
+
+    pub async fn get_introspection_recent_searches(&self, limit: usize) -> Result<Vec<String>> {
+        self.call(move |conn| {
+            let mut stmt =
+                conn.prepare("SELECT query FROM search_runs ORDER BY created_at DESC LIMIT ?1")?;
+            let rows = stmt.query_map(rusqlite::params![limit as i64], |r| r.get(0))?;
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+        .await
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1505,6 +1945,69 @@ pub struct SourceContainerSummary {
     pub object_count: i64,
     pub last_updated: Option<String>,
     pub first_seen: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct IntrospectionRunRecord {
+    pub id: String,
+    pub created_at: String,
+    pub question: String,
+    pub question_fingerprint: String,
+    pub trigger_reason: String,
+    pub search_run_id: Option<String>,
+    pub accuracy: f64,
+    pub relevance: f64,
+    pub coverage: f64,
+    pub traceability: f64,
+    pub conciseness: f64,
+    pub weighted_score: f64,
+    pub percentage: f64,
+    pub result: String,
+    pub interpretation: String,
+    pub answer: String,
+    pub problem_areas_json: String,
+    pub recommendation: String,
+    pub evidence_keys_json: String,
+    pub evaluation_details_json: String,
+}
+
+impl IntrospectionRunRecord {
+    pub fn problem_areas(&self) -> Vec<String> {
+        serde_json::from_str(&self.problem_areas_json).unwrap_or_default()
+    }
+
+    pub fn evidence_keys(&self) -> Vec<String> {
+        serde_json::from_str(&self.evidence_keys_json).unwrap_or_default()
+    }
+
+    pub fn evaluation_details(&self) -> serde_json::Value {
+        serde_json::from_str(&self.evaluation_details_json).unwrap_or_default()
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct IntrospectionStatsSummary {
+    pub seven_day_average: f64,
+    pub pass_count: u32,
+    pub weak_count: u32,
+    pub fail_count: u32,
+    pub total_count: u32,
+    pub runs_today: u32,
+    pub last_run_at: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct IntrospectionDailyBucket {
+    pub date: String,
+    pub count: u32,
+    pub average_score: f64,
+    pub average_accuracy: f64,
+    pub average_relevance: f64,
+    pub average_coverage: f64,
+    pub average_traceability: f64,
+    pub pass_count: u32,
+    pub weak_count: u32,
+    pub fail_count: u32,
 }
 
 #[cfg(test)]

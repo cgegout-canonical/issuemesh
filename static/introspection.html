@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IssueMesh - Continuous Introspection</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .stat-card {
+            background: var(--color-white);
+            border: 1px solid var(--color-border-grey);
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .stat-label {
+            font-size: 0.82rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--color-muted-text);
+            font-weight: 600;
+            margin-bottom: 0.4rem;
+        }
+        .stat-value {
+            font-size: 1.65rem;
+            font-weight: 700;
+            color: var(--color-dark-text);
+            line-height: 1.2;
+        }
+        .stat-subtext {
+            font-size: 0.85rem;
+            color: var(--color-muted-text);
+            margin-top: 0.4rem;
+        }
+        .badge-pass {
+            background-color: #e6f4ea;
+            color: var(--color-green);
+            border: 1px solid #ceead6;
+        }
+        .badge-weak {
+            background-color: #fef7e0;
+            color: #b06000;
+            border: 1px solid #feefc3;
+        }
+        .badge-fail {
+            background-color: #fce8e6;
+            color: var(--color-red);
+            border: 1px solid #fad2cf;
+        }
+        .dim-bar-container {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.35rem;
+            font-size: 0.85rem;
+        }
+        .dim-name {
+            width: 100px;
+            color: var(--color-muted-text);
+        }
+        .dim-bar-bg {
+            flex: 1;
+            height: 8px;
+            background: #eee;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .dim-bar-fill {
+            height: 100%;
+            background: var(--color-orange);
+            border-radius: 4px;
+        }
+        .dim-val {
+            width: 40px;
+            text-align: right;
+            font-family: var(--font-mono);
+            font-weight: 600;
+        }
+        .run-item {
+            background: var(--color-white);
+            border: 1px solid var(--color-border-grey);
+            margin-bottom: 0.85rem;
+            transition: box-shadow 0.15s;
+        }
+        .run-item:hover {
+            box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+        }
+        .run-header {
+            padding: 1rem 1.25rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 1rem;
+            cursor: pointer;
+            user-select: none;
+        }
+        .run-header:hover {
+            background-color: #FAFAFA;
+        }
+        .run-details {
+            padding: 1rem 1.25rem;
+            border-top: 1px solid var(--color-border-grey);
+            background-color: #FAFAFA;
+            display: none;
+        }
+        .run-details.open {
+            display: block;
+        }
+        .pill {
+            display: inline-block;
+            padding: 2px 8px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            border-radius: 12px;
+            background: var(--color-warm-grey);
+            border: 1px solid var(--color-border-grey);
+            margin-right: 0.35rem;
+            margin-bottom: 0.35rem;
+        }
+        .tag-reason {
+            background: #F0E8ED;
+            color: var(--color-aubergine);
+            border-color: #D9C2D2;
+        }
+        .tag-problem {
+            background: #FEEFEF;
+            color: var(--color-red);
+            border-color: #F8CBCB;
+        }
+        .chart-box {
+            background: var(--color-white);
+            border: 1px solid var(--color-border-grey);
+            padding: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/" class="brand">
+            <span class="brand-dot"></span>
+            IssueMesh
+        </a>
+        <nav>
+            <a href="/">Search</a>
+            <a href="/memory">Memory</a>
+            <a href="/sources">Sources</a>
+            <a href="/introspection" class="active">Introspection</a>
+            <a href="/health">Health</a>
+            <a href="/settings">Settings</a>
+        </nav>
+        <div id="header-health" class="status-badge">
+            <span class="dot dot-healthy"></span>
+            <span>Introspection Ready</span>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- Hero / Header Section -->
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem; margin-bottom: 2rem;">
+            <div>
+                <h1>Continuous Introspection</h1>
+                <p style="color: var(--color-muted-text); margin-top: 0.25rem; max-width: 720px;">
+                    Automated, evidence-driven self-evaluation. IssueMesh continuously challenges itself with realistic research questions across Jira, GitHub, and Launchpad, strictly enforcing scoring dimensions and hard-failure rules without modifying external data.
+                </p>
+            </div>
+            <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+                <a href="/about-introspection" class="btn btn-secondary" style="text-decoration: none; padding: 0.65rem 1.25rem; font-size: 0.9rem;">
+                    About Introspection &rarr;
+                </a>
+                <button id="btn-trigger" class="btn btn-primary" onclick="triggerIntrospection()" style="padding: 0.65rem 1.25rem; font-size: 0.9rem;">
+                    Trigger Introspection Now
+                </button>
+            </div>
+        </div>
+
+        <div id="alert-banner" style="display: none; padding: 0.85rem 1.25rem; margin-bottom: 1.5rem; border-radius: 2px;"></div>
+
+        <!-- Dashboard Stats Cards -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Introspection Level</div>
+                <div class="stat-value" id="stat-level">-</div>
+                <div class="stat-subtext" id="stat-frequency"><a href="/settings" style="color: var(--color-orange); text-decoration: none;">Configure in Settings &rarr;</a></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Evaluations Today</div>
+                <div class="stat-value" id="stat-today">-</div>
+                <div class="stat-subtext" id="stat-quota">Quota: -</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">7-Day Quality Score</div>
+                <div class="stat-value" id="stat-avg-score">-</div>
+                <div class="stat-subtext" id="stat-percentage">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Results (All Time)</div>
+                <div style="display: flex; gap: 0.4rem; align-items: baseline; margin-top: 0.25rem;">
+                    <span class="badge badge-pass" id="stat-pass">0 PASS</span>
+                    <span class="badge badge-weak" id="stat-weak">0 WEAK</span>
+                    <span class="badge badge-fail" id="stat-fail">0 FAIL</span>
+                </div>
+                <div class="stat-subtext" id="stat-total-runs">0 evaluations total</div>
+            </div>
+        </div>
+
+        <!-- Schedule & Scheduler Health Details -->
+        <div class="card" style="margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; font-size: 0.9rem;">
+            <div>
+                <strong>Scheduler State:</strong> <span id="sched-status" style="margin-right: 1.5rem; color: var(--color-dark-text); font-weight: 500;">Checking...</span>
+                <strong>Last Run:</strong> <span id="sched-last" style="margin-right: 1.5rem; color: var(--color-muted-text);">-</span>
+                <strong>Next Expected:</strong> <span id="sched-next" style="color: var(--color-muted-text);">-</span>
+            </div>
+            <div id="sched-indicator" class="status-badge">
+                <span class="dot dot-idle"></span>
+                <span>Standby</span>
+            </div>
+        </div>
+
+        <!-- Quality Trends & Dimension Breakdown -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+            <!-- Trend SVG Chart -->
+            <div class="chart-box">
+                <div class="card-title" style="font-size: 1.05rem; margin-bottom: 0.75rem;">7-Day Quality Trend</div>
+                <div id="trend-chart-container" style="height: 180px; width: 100%; display: flex; align-items: center; justify-content: center;">
+                    <span style="color: var(--color-muted-text); font-size: 0.9rem;">Gathering evaluation trend data...</span>
+                </div>
+            </div>
+
+            <!-- Dimensions Quality Breakdown -->
+            <div class="chart-box">
+                <div class="card-title" style="font-size: 1.05rem; margin-bottom: 0.75rem;">Quality Dimensions (7-Day Average)</div>
+                <div id="dimensions-container">
+                    <div class="dim-bar-container">
+                        <span class="dim-name">Accuracy (35%)</span>
+                        <div class="dim-bar-bg"><div id="bar-accuracy" class="dim-bar-fill" style="width: 0%;"></div></div>
+                        <span id="val-accuracy" class="dim-val">-</span>
+                    </div>
+                    <div class="dim-bar-container">
+                        <span class="dim-name">Relevance (25%)</span>
+                        <div class="dim-bar-bg"><div id="bar-relevance" class="dim-bar-fill" style="width: 0%;"></div></div>
+                        <span id="val-relevance" class="dim-val">-</span>
+                    </div>
+                    <div class="dim-bar-container">
+                        <span class="dim-name">Coverage (15%)</span>
+                        <div class="dim-bar-bg"><div id="bar-coverage" class="dim-bar-fill" style="width: 0%;"></div></div>
+                        <span id="val-coverage" class="dim-val">-</span>
+                    </div>
+                    <div class="dim-bar-container">
+                        <span class="dim-name">Traceability (15%)</span>
+                        <div class="dim-bar-bg"><div id="bar-traceability" class="dim-bar-fill" style="width: 0%;"></div></div>
+                        <span id="val-traceability" class="dim-val">-</span>
+                    </div>
+                    <div class="dim-bar-container">
+                        <span class="dim-name">Conciseness (10%)</span>
+                        <div class="dim-bar-bg"><div id="bar-conciseness" class="dim-bar-fill" style="width: 0%;"></div></div>
+                        <span id="val-conciseness" class="dim-val">-</span>
+                    </div>
+                    <div style="margin-top: 1rem; font-size: 0.8rem; color: var(--color-muted-text);">
+                        Hard-failure: Hallucination = Accuracy 0 (FAIL). Contradiction ignored = Accuracy &le; 1.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Introspection Runs -->
+        <div style="margin-bottom: 2rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h2>Recent Self-Evaluations</h2>
+                <span id="runs-count-label" style="font-size: 0.9rem; color: var(--color-muted-text);">Showing latest runs</span>
+            </div>
+
+            <div id="runs-list">
+                <div class="card" style="text-align: center; padding: 2rem; color: var(--color-muted-text);">
+                    Loading recent introspection records...
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let isTriggering = false;
+
+        async function loadIntrospectionData() {
+            try {
+                const res = await fetch('/api/introspection');
+                const data = await res.json();
+                renderDashboard(data);
+            } catch (err) {
+                console.error('Failed to load introspection data:', err);
+                showBanner(`Failed to load introspection data: ${err.message}`, false);
+            }
+        }
+
+        function renderDashboard(data) {
+            // Level
+            document.getElementById('stat-level').textContent = `${data.level_name || 'Level ' + data.level}`;
+            document.getElementById('stat-frequency').innerHTML = `${data.questions_per_day} questions/day &middot; <a href="/settings" style="color: var(--color-orange); text-decoration: none;">Configure</a>`;
+            
+            // Today
+            document.getElementById('stat-today').textContent = `${data.questions_today} / ${data.questions_per_day}`;
+            document.getElementById('stat-quota').textContent = data.questions_today >= data.questions_per_day 
+                ? 'Daily quota completed' 
+                : `${data.questions_per_day - data.questions_today} remaining today`;
+
+            // Stats
+            const stats = data.stats || {};
+            const avg7 = stats.avg_weighted_score_7d !== undefined && stats.avg_weighted_score_7d !== null 
+                ? stats.avg_weighted_score_7d.toFixed(2) 
+                : (stats.avg_weighted_score !== undefined && stats.avg_weighted_score !== null ? stats.avg_weighted_score.toFixed(2) : '-');
+            const pct7 = stats.avg_percentage_7d !== undefined && stats.avg_percentage_7d !== null 
+                ? `${stats.avg_percentage_7d.toFixed(1)}%` 
+                : (stats.avg_percentage !== undefined && stats.avg_percentage !== null ? `${stats.avg_percentage.toFixed(1)}%` : '-');
+
+            document.getElementById('stat-avg-score').textContent = avg7 !== '-' ? `${avg7} / 5` : 'No data';
+            document.getElementById('stat-percentage').textContent = pct7 !== '-' ? `Normalized score: ${pct7}` : 'Awaiting evaluations';
+
+            // Counts
+            document.getElementById('stat-pass').textContent = `${stats.pass_count || 0} PASS`;
+            document.getElementById('stat-weak').textContent = `${stats.weak_count || 0} WEAK`;
+            document.getElementById('stat-fail').textContent = `${stats.fail_count || 0} FAIL`;
+            document.getElementById('stat-total-runs').textContent = `${stats.total_runs || 0} evaluations recorded`;
+
+            // Scheduler State
+            document.getElementById('sched-status').textContent = data.scheduler_status || (data.is_running ? 'Executing evaluation' : 'Healthy');
+            document.getElementById('sched-last').textContent = data.last_run ? formatRelativeTime(data.last_run) : 'None';
+            document.getElementById('sched-next').textContent = data.next_expected ? formatRelativeTime(data.next_expected) : (data.questions_per_day === 0 ? 'Disabled' : 'Calculated automatically');
+
+            const schedDot = document.querySelector('#sched-indicator .dot');
+            const schedText = document.querySelector('#sched-indicator span:last-child');
+            if (data.is_running) {
+                schedDot.className = 'dot dot-searching';
+                schedText.textContent = 'Active Evaluation';
+                document.getElementById('btn-trigger').disabled = true;
+                document.getElementById('btn-trigger').textContent = 'Evaluating...';
+            } else {
+                schedDot.className = data.questions_per_day > 0 ? 'dot dot-healthy' : 'dot dot-idle';
+                schedText.textContent = data.questions_per_day > 0 ? 'Scheduled' : 'Disabled';
+                if (!isTriggering) {
+                    document.getElementById('btn-trigger').disabled = false;
+                    document.getElementById('btn-trigger').textContent = 'Trigger Introspection Now';
+                }
+            }
+
+            // Dimensions breakdown
+            renderDimensionBars(stats);
+
+            // Trends Chart
+            renderTrendsChart(data.trends || []);
+
+            // Runs list
+            renderRunsList(data.runs || []);
+        }
+
+        function renderDimensionBars(stats) {
+            const dims = [
+                { id: 'accuracy', val: stats.avg_accuracy_7d ?? stats.avg_accuracy },
+                { id: 'relevance', val: stats.avg_relevance_7d ?? stats.avg_relevance },
+                { id: 'coverage', val: stats.avg_coverage_7d ?? stats.avg_coverage },
+                { id: 'traceability', val: stats.avg_traceability_7d ?? stats.avg_traceability },
+                { id: 'conciseness', val: stats.avg_conciseness_7d ?? stats.avg_conciseness },
+            ];
+
+            dims.forEach(d => {
+                const num = d.val !== undefined && d.val !== null ? Number(d.val) : null;
+                const fill = document.getElementById(`bar-${d.id}`);
+                const txt = document.getElementById(`val-${d.id}`);
+                if (fill && txt) {
+                    if (num !== null && !isNaN(num)) {
+                        const pct = Math.min(100, Math.max(0, (num / 5.0) * 100));
+                        fill.style.width = `${pct}%`;
+                        txt.textContent = num.toFixed(2);
+                        fill.style.backgroundColor = num >= 4.0 ? 'var(--color-green)' : (num >= 3.0 ? 'var(--color-orange)' : 'var(--color-red)');
+                    } else {
+                        fill.style.width = '0%';
+                        txt.textContent = '-';
+                    }
+                }
+            });
+        }
+
+        function renderTrendsChart(trends) {
+            const container = document.getElementById('trend-chart-container');
+            if (!trends || trends.length === 0) {
+                container.innerHTML = '<span style="color: var(--color-muted-text); font-size: 0.9rem;">No evaluations recorded in the last 7 days yet.</span>';
+                return;
+            }
+
+            // Generate clean SVG chart
+            const width = 460;
+            const height = 160;
+            const padL = 40;
+            const padR = 20;
+            const padT = 20;
+            const padB = 30;
+
+            const innerW = width - padL - padR;
+            const innerH = height - padT - padB;
+
+            // X points
+            const n = trends.length;
+            const stepX = n > 1 ? innerW / (n - 1) : innerW / 2;
+
+            const points = trends.map((t, i) => {
+                const x = padL + (n > 1 ? i * stepX : innerW / 2);
+                const score = t.avg_score || 0;
+                // scale 0..5
+                const y = padT + innerH - ((score / 5.0) * innerH);
+                return { x, y, score, day: t.day, pass: t.pass_count, weak: t.weak_count, fail: t.fail_count };
+            });
+
+            const pathD = points.reduce((acc, p, idx) => {
+                return idx === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`;
+            }, '');
+
+            // Area path
+            const areaD = `${pathD} L ${points[points.length - 1].x} ${padT + innerH} L ${points[0].x} ${padT + innerH} Z`;
+
+            let circles = points.map(p => `
+                <circle cx="${p.x}" cy="${p.y}" r="4" fill="var(--color-orange)" stroke="#fff" stroke-width="2">
+                    <title>${p.day}: ${p.score.toFixed(2)}/5 (PASS:${p.pass} WEAK:${p.weak} FAIL:${p.fail})</title>
+                </circle>
+                <text x="${p.x}" y="${padT + innerH + 18}" text-anchor="middle" font-size="10" fill="#777">${p.day.slice(5)}</text>
+            `).join('');
+
+            const svg = `
+                <svg viewBox="0 0 ${width} ${height}" style="width: 100%; height: 100%; max-height: 180px; overflow: visible;">
+                    <!-- Grid horizontal lines -->
+                    <line x1="${padL}" y1="${padT}" x2="${width - padR}" y2="${padT}" stroke="#f0f0f0" stroke-width="1" />
+                    <text x="${padL - 6}" y="${padT + 4}" font-size="10" fill="#999" text-anchor="end">5.0</text>
+
+                    <line x1="${padL}" y1="${padT + innerH / 2}" x2="${width - padR}" y2="${padT + innerH / 2}" stroke="#f0f0f0" stroke-width="1" />
+                    <text x="${padL - 6}" y="${padT + innerH / 2 + 4}" font-size="10" fill="#999" text-anchor="end">2.5</text>
+
+                    <line x1="${padL}" y1="${padT + innerH}" x2="${width - padR}" y2="${padT + innerH}" stroke="#e0e0e0" stroke-width="1" />
+                    <text x="${padL - 6}" y="${padT + innerH + 4}" font-size="10" fill="#999" text-anchor="end">0.0</text>
+
+                    <!-- Area -->
+                    <path d="${areaD}" fill="rgba(233, 84, 32, 0.08)" />
+
+                    <!-- Line -->
+                    <path d="${pathD}" fill="none" stroke="var(--color-orange)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+
+                    <!-- Points -->
+                    ${circles}
+                </svg>
+            `;
+
+            container.innerHTML = svg;
+        }
+
+        function renderRunsList(runs) {
+            const container = document.getElementById('runs-list');
+            if (!runs || runs.length === 0) {
+                container.innerHTML = `
+                    <div class="card" style="text-align: center; padding: 2.5rem 1rem;">
+                        <h3 style="margin-bottom: 0.5rem; font-weight: 500;">No Introspection Runs Yet</h3>
+                        <p style="color: var(--color-muted-text); margin-bottom: 1.25rem;">
+                            The scheduler runs automatically according to your frequency setting, or you can trigger an immediate cycle.
+                        </p>
+                        <button class="btn btn-primary" onclick="triggerIntrospection()">Run Introspection Now</button>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '';
+            runs.forEach((r, idx) => {
+                const badgeClass = r.result === 'PASS' ? 'badge-pass' : (r.result === 'WEAK' ? 'badge-weak' : 'badge-fail');
+                const relTime = formatRelativeTime(r.created_at);
+                const probAreas = r.problem_areas || [];
+                const evKeys = r.evidence_keys || [];
+                const searchRunLink = r.search_run_id ? `/search/${r.search_run_id}/run` : '#';
+
+                html += `
+                    <div class="run-item" id="run-${r.id}">
+                        <div class="run-header" onclick="toggleDetails('${r.id}')">
+                            <div style="flex: 1;">
+                                <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem; flex-wrap: wrap;">
+                                    <span class="badge ${badgeClass}">${escapeHtml(r.result)}</span>
+                                    <span class="pill tag-reason">${escapeHtml(r.trigger_reason || 'Periodic')}</span>
+                                    <span style="font-size: 0.85rem; color: var(--color-muted-text);">${relTime}</span>
+                                </div>
+                                <div style="font-size: 1.05rem; font-weight: 600; color: var(--color-dark-text); margin-bottom: 0.25rem;">
+                                    ${escapeHtml(r.question)}
+                                </div>
+                                <div style="font-size: 0.85rem; color: var(--color-muted-text);">
+                                    ${escapeHtml(r.interpretation || '')}
+                                </div>
+                            </div>
+                            <div style="text-align: right; min-width: 90px;">
+                                <div style="font-size: 1.35rem; font-weight: 700; color: var(--color-dark-text);">
+                                    ${r.weighted_score.toFixed(2)}
+                                </div>
+                                <div style="font-size: 0.8rem; color: var(--color-muted-text);">
+                                    ${r.percentage.toFixed(1)}%
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="run-details" id="details-${r.id}">
+                            <!-- Dimensions Score breakdown -->
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; background: #fff; padding: 0.85rem; border: 1px solid var(--color-border-grey); margin-bottom: 1rem;">
+                                <div><small style="color: var(--color-muted-text);">Accuracy (35%):</small><br><strong>${r.accuracy.toFixed(1)} / 5</strong></div>
+                                <div><small style="color: var(--color-muted-text);">Relevance (25%):</small><br><strong>${r.relevance.toFixed(1)} / 5</strong></div>
+                                <div><small style="color: var(--color-muted-text);">Coverage (15%):</small><br><strong>${r.coverage.toFixed(1)} / 5</strong></div>
+                                <div><small style="color: var(--color-muted-text);">Traceability (15%):</small><br><strong>${r.traceability.toFixed(1)} / 5</strong></div>
+                                <div><small style="color: var(--color-muted-text);">Conciseness (10%):</small><br><strong>${r.conciseness.toFixed(1)} / 5</strong></div>
+                            </div>
+
+                            <!-- Problem Areas & Recommendations -->
+                            ${probAreas.length > 0 ? `
+                                <div style="margin-bottom: 0.85rem;">
+                                    <strong>Identified Problem Areas:</strong>
+                                    <div style="margin-top: 0.25rem;">
+                                        ${probAreas.map(p => `<span class="pill tag-problem">${escapeHtml(p)}</span>`).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
+
+                            ${r.recommendation ? `
+                                <div style="margin-bottom: 0.85rem; background: #FFF9E6; border-left: 3px solid #FFBA00; padding: 0.6rem 0.85rem; font-size: 0.88rem;">
+                                    <strong>Recommendation:</strong> ${escapeHtml(r.recommendation)}
+                                </div>
+                            ` : ''}
+
+                            <!-- Evidence Consulted -->
+                            <div style="margin-bottom: 0.85rem;">
+                                <strong>Consulted Evidence (${evKeys.length}):</strong>
+                                <div style="margin-top: 0.25rem; font-family: var(--font-mono); font-size: 0.82rem;">
+                                    ${evKeys.length > 0 ? evKeys.map(k => `<span class="pill">${escapeHtml(k)}</span>`).join('') : '<span style="color: var(--color-muted-text);">No evidence items retrieved</span>'}
+                                </div>
+                            </div>
+
+                            <!-- Synthesized Answer -->
+                            <div style="margin-bottom: 1rem;">
+                                <strong>Synthesized Answer:</strong>
+                                <div style="margin-top: 0.4rem; padding: 0.75rem 1rem; background: #fff; border: 1px solid var(--color-border-grey); border-radius: 2px; font-size: 0.92rem; line-height: 1.5; white-space: pre-wrap;">${escapeHtml(r.answer || 'No answer generated')}</div>
+                            </div>
+
+                            <!-- Search Run Link -->
+                            <div style="display: flex; justify-content: flex-end; align-items: center; gap: 1rem;">
+                                <span style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--color-muted-text);">Fingerprint: ${escapeHtml((r.question_fingerprint || '').slice(0, 12))}...</span>
+                                ${r.search_run_id ? `<a href="${searchRunLink}" class="btn btn-secondary" style="font-size: 0.85rem; padding: 0.45rem 0.9rem; text-decoration: none;">Inspect Full Search Run &rarr;</a>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function toggleDetails(id) {
+            const el = document.getElementById(`details-${id}`);
+            if (el) {
+                el.classList.toggle('open');
+            }
+        }
+
+        async function triggerIntrospection() {
+            const btn = document.getElementById('btn-trigger');
+            if (isTriggering) return;
+            isTriggering = true;
+            btn.disabled = true;
+            btn.textContent = 'Generating & Evaluating...';
+
+            showBanner('Running continuous introspection cycle...', true);
+
+            try {
+                const res = await fetch('/api/introspection/trigger', { method: 'POST' });
+                const data = await res.json();
+                if (res.ok && data.ok) {
+                    showBanner(`Introspection cycle finished! Evaluated question with score ${data.run.weighted_score.toFixed(2)}/5 (${data.run.result})`, true);
+                    loadIntrospectionData();
+                } else if (res.status === 409) {
+                    showBanner(`An introspection evaluation is already actively executing in background.`, false);
+                } else {
+                    showBanner(`Introspection run failed: ${data.error || 'Server error'}`, false);
+                }
+            } catch (err) {
+                showBanner(`Request error: ${err.message}`, false);
+            } finally {
+                isTriggering = false;
+                btn.disabled = false;
+                btn.textContent = 'Trigger Introspection Now';
+            }
+        }
+
+        function showBanner(msg, isSuccess) {
+            const b = document.getElementById('alert-banner');
+            b.style.display = 'block';
+            b.style.backgroundColor = isSuccess ? '#e6f4ea' : '#fce8e6';
+            b.style.color = isSuccess ? '#137333' : '#c5221f';
+            b.style.border = `1px solid ${isSuccess ? '#ceead6' : '#fad2cf'}`;
+            b.textContent = msg;
+            setTimeout(() => { b.style.display = 'none'; }, 6000);
+        }
+
+        function formatRelativeTime(dateStr) {
+            if (!dateStr) return 'Never';
+            const dt = new Date(dateStr);
+            if (isNaN(dt.getTime())) return dateStr;
+            const now = new Date();
+            const diffMs = now.getTime() - dt.getTime();
+            const diffSec = Math.round(diffMs / 1000);
+            
+            if (diffSec < 0) {
+                // Future
+                const futSec = -diffSec;
+                if (futSec < 60) return `in ${futSec}s`;
+                if (futSec < 3600) return `in ${Math.floor(futSec / 60)}m`;
+                if (futSec < 86400) return `in ${Math.floor(futSec / 3600)}h ${Math.floor((futSec % 3600) / 60)}m`;
+                return dt.toLocaleDateString();
+            }
+
+            if (diffSec < 60) return `${diffSec}s ago`;
+            if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+            if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+            return dt.toLocaleDateString();
+        }
+
+        function escapeHtml(s) {
+            return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        // Initial load and periodic refresh
+        loadIntrospectionData();
+        setInterval(loadIntrospectionData, 15000);
+    </script>
+</body>
+</html>

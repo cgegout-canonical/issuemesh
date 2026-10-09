@@ -1,5 +1,6 @@
 pub mod config;
 pub mod connectors;
+pub mod introspection;
 pub mod jobs;
 pub mod model;
 pub mod paths;
@@ -18,6 +19,7 @@ pub struct AppState {
     pub secrets: Arc<RwLock<config::Secrets>>,
     pub store: store::Store,
     pub jobs: jobs::JobManager,
+    pub introspection: introspection::IntrospectionScheduler,
     pub search_results:
         Arc<RwLock<std::collections::HashMap<String, search::orchestrator::DeepSearchResult>>>,
 }
@@ -35,6 +37,7 @@ impl AppState {
             secrets: Arc::new(RwLock::new(secrets)),
             store,
             jobs: jobs::JobManager::new(),
+            introspection: introspection::IntrospectionScheduler::new(),
             search_results: Arc::new(RwLock::new(std::collections::HashMap::new())),
         }
     }

@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About Introspection - IssueMesh</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .doc-section {
+            margin-bottom: 2.5rem;
+            border-bottom: 1px solid var(--color-border-grey);
+            padding-bottom: 2rem;
+        }
+        .doc-section:last-child {
+            border-bottom: none;
+        }
+        .doc-section h2 {
+            font-size: 1.4rem;
+            color: var(--color-dark-aubergine);
+            margin-bottom: 0.75rem;
+        }
+        .doc-section h3 {
+            font-size: 1.1rem;
+            margin-top: 1.25rem;
+            margin-bottom: 0.5rem;
+        }
+        .doc-section p, .doc-section ul, .doc-section ol {
+            color: #333;
+            line-height: 1.65;
+            margin-bottom: 0.85rem;
+        }
+        .doc-section ul, .doc-section ol {
+            padding-left: 1.5rem;
+        }
+        .doc-section li {
+            margin-bottom: 0.4rem;
+        }
+        .table-custom {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            font-size: 0.92rem;
+        }
+        .table-custom th, .table-custom td {
+            border: 1px solid var(--color-border-grey);
+            padding: 0.6rem 0.85rem;
+            text-align: left;
+        }
+        .table-custom th {
+            background-color: var(--color-warm-grey);
+            font-weight: 600;
+        }
+        .callout {
+            border-left: 4px solid var(--color-orange);
+            background: #FFF9F5;
+            padding: 0.85rem 1.25rem;
+            margin: 1rem 0;
+            border-radius: 2px;
+        }
+        .callout-aubergine {
+            border-left: 4px solid var(--color-aubergine);
+            background: #FBF7FA;
+            padding: 0.85rem 1.25rem;
+            margin: 1rem 0;
+            border-radius: 2px;
+        }
+        .pill-tag {
+            display: inline-block;
+            padding: 2px 7px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            border-radius: 3px;
+            background: var(--color-warm-grey);
+            border: 1px solid var(--color-border-grey);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/" class="brand">
+            <span class="brand-dot"></span>
+            IssueMesh
+        </a>
+        <nav>
+            <a href="/">Search</a>
+            <a href="/memory">Memory</a>
+            <a href="/sources">Sources</a>
+            <a href="/introspection">Introspection</a>
+            <a href="/health">Health</a>
+            <a href="/settings">Settings</a>
+        </nav>
+        <div id="header-health" class="status-badge">
+            <span class="dot dot-healthy"></span>
+            <span>Documentation</span>
+        </div>
+    </header>
+
+    <main class="container" style="max-width: 860px;">
+        <div style="margin-bottom: 2rem;">
+            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
+                <a href="/introspection" style="color: var(--color-orange); text-decoration: none; font-size: 0.9rem;">&larr; Back to Introspection Dashboard</a>
+            </div>
+            <h1>IssueMesh Introspection Architecture</h1>
+            <p style="color: var(--color-muted-text); font-size: 1.05rem; margin-top: 0.25rem;">
+                Autonomous, evidence-grounded self-evaluation framework for cross-tracker engineering intelligence.
+            </p>
+        </div>
+
+        <!-- 1. Motivation & Purpose -->
+        <section class="doc-section">
+            <h2>1. Motivation & Purpose</h2>
+            <p>
+                Engineering intelligence systems cannot rely solely on static benchmark suites or occasional human spot-checks. Real-world tracker topologies are dynamic: issue states evolve, pull requests merge, Launchpad bugs transition across package series, and cross-tracker relationships degrade or resolve over time.
+            </p>
+            <p>
+                <strong>Introspection</strong> is IssueMesh's autonomous self-evaluation engine. It continuously evaluates search recall, graph traversal precision, cross-source consistency detection, and synthesis accuracy by formulating meaningful research questions from live tracker data and executing them through its standard search pipeline.
+            </p>
+            <div class="callout">
+                <strong>Empirical Grounding:</strong> IssueMesh never invents answers or tests in a vacuum. Every introspection cycle operates against genuine tracker objects and graph relationships present in your local datastore.
+            </div>
+        </section>
+
+        <!-- 2. Levels & Scheduling -->
+        <section class="doc-section">
+            <h2>2. Introspection Levels & Scheduling</h2>
+            <p>
+                Users configure introspection cadence via the 5-position slider in <a href="/settings" style="color: var(--color-orange);">Settings</a>. Each level specifies an exact daily quota of evaluations spread evenly across the 24-hour day:
+            </p>
+            <table class="table-custom">
+                <thead>
+                    <tr>
+                        <th>Level</th>
+                        <th>Name</th>
+                        <th>Cadence</th>
+                        <th>Behavior</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>0</strong></td>
+                        <td>None</td>
+                        <td>0 / day</td>
+                        <td>Introspection engine is completely disabled. No automated questions are run.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>1</strong></td>
+                        <td>Light</td>
+                        <td>2 / day</td>
+                        <td>Low background cadence (one evaluation every 12 hours). Minimal resource footprint.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>2</strong></td>
+                        <td>Reasonable <span class="pill-tag" style="color: var(--color-green); background: #e6f4ea;">Recommended</span></td>
+                        <td>4 / day</td>
+                        <td>Balanced evaluation (every 6 hours). Continuously monitors graph consistency without straining LLM budgets.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>3</strong></td>
+                        <td>Curious</td>
+                        <td>7 / day</td>
+                        <td>Proactive exploratory cadence (~every 3.4 hours). Thorough coverage of emerging conflicts and link states.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>4</strong></td>
+                        <td>Introvert!!</td>
+                        <td>10 / day</td>
+                        <td>Maximum self-scrutiny (~every 2.4 hours). Recommended for active development, large repositories, and deep verification.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>Scheduling Guarantees</h3>
+            <ul>
+                <li><strong>No concurrent runs:</strong> Introspection uses an atomic single-flight lock (<code>AtomicBool</code>). Multiple introspection searches can never run concurrently.</li>
+                <li><strong>Daily quota enforcement:</strong> The scheduler strictly counts runs completed within the current UTC day and never exceeds the configured limit.</li>
+                <li><strong>Even spacing:</strong> Questions are spaced by <code>(24 * 3600) / daily_count</code> seconds rather than run in batches.</li>
+                <li><strong>Restart tolerance:</strong> If the application restarts, it inspects stored timestamps and resumes the schedule without burst-replaying missed intervals.</li>
+                <li><strong>Failure isolation:</strong> Any network timeouts, connector issues, or LLM errors in an introspection cycle are logged safely and never impede interactive user searches.</li>
+            </ul>
+        </section>
+
+        <!-- 3. Question Generation -->
+        <section class="doc-section">
+            <h2>3. Evidence-Driven Question Generation</h2>
+            <p>
+                Introspection questions are not generic or randomly chosen prompts. Instead, the <code>QuestionGenerator</code> inspects real signals in the datastore to construct targeted, evidence-seeking inquiries:
+            </p>
+            <ul>
+                <li><strong>Conflicting Cross-Tracker States:</strong> Targets items where Jira, GitHub, or Launchpad report contradictory statuses (e.g. Jira marked "Done" while a linked PR is "Open").</li>
+                <li><strong>Unresolved Relationships:</strong> Targets objects that reference external tracker keys not yet resolved in the local graph.</li>
+                <li><strong>Low-Confidence Links:</strong> Formulates questions around speculative or lexical cross-tracker links to verify whether hard evidence supports them.</li>
+                <li><strong>Recently Changed Objects:</strong> Inspects issues and PRs updated in recent sync cycles to verify graph consistency.</li>
+                <li><strong>Previous Weak or Fail Runs:</strong> Automatically re-challenges topics that received low evaluation scores to detect whether graph enrichment resolved previous deficits.</li>
+                <li><strong>Stale Cached Records:</strong> Inquires about cached objects that may have undergone remote tracker updates.</li>
+            </ul>
+
+            <h3>SHA-256 Fingerprint Deduplication</h3>
+            <p>
+                To avoid asking identical or trivial variations of the same question repeatedly, every generated question is normalized and hashed into a canonical SHA-256 fingerprint. The scheduler rejects any candidate question whose fingerprint matches an evaluation completed within the past 7 days.
+            </p>
+        </section>
+
+        <!-- 4. Pipeline -->
+        <section class="doc-section">
+            <h2>4. The Introspection Pipeline</h2>
+            <p>Each evaluation cycle executes end-to-end through the standard IssueMesh architecture:</p>
+            <div class="callout-aubergine">
+                <ol style="margin-bottom: 0;">
+                    <li><strong>Signal Discovery:</strong> Candidate signals are harvested from the SQLite graph store and prioritized.</li>
+                    <li><strong>Question Formulation:</strong> A targeted, evidence-seeking question is constructed with its trigger rationale.</li>
+                    <li><strong>Standard Search Execution:</strong> The question is executed via <code>SearchOrchestrator::execute</code>, querying local FTS, graph traversal, and live connectors identically to a human user search.</li>
+                    <li><strong>Diagnostic Evaluation:</strong> The answer, retrieved evidence objects, search warnings, and execution metrics are inspected across all 5 quality dimensions.</li>
+                    <li><strong>Hard-Failure Verification:</strong> Checks for hallucinations, ignored contradictions, or definitive unsupported claims.</li>
+                    <li><strong>Persistence & Reporting:</strong> Results, scores, problem areas, and actionable recommendations are recorded in the <code>introspection_runs</code> store.</li>
+                </ol>
+            </div>
+        </section>
+
+        <!-- 5. Scoring Dimensions -->
+        <section class="doc-section">
+            <h2>5. Evaluation Dimensions & Formulas</h2>
+            <p>Every introspection run is scored on five dimensions from 0 to 5:</p>
+            <table class="table-custom">
+                <thead>
+                    <tr>
+                        <th>Dimension</th>
+                        <th>Weight</th>
+                        <th>Measurement Focus</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Accuracy</strong></td>
+                        <td><strong>35%</strong></td>
+                        <td>Factual truthfulness of all claims. Statuses, dates, ownership, PR numbers, and tracker relationships must be strictly supported by retrieved evidence.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Relevance</strong></td>
+                        <td><strong>25%</strong></td>
+                        <td>Direct response to the target question. Rewards crisp, focused answers and penalizes irrelevant information dumps.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Coverage</strong></td>
+                        <td><strong>15%</strong></td>
+                        <td>Retrieval breadth. Verifies that necessary related objects and multi-tracker relationships were retrieved and inspected.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Traceability</strong></td>
+                        <td><strong>15%</strong></td>
+                        <td>Explicit citation of concrete tracker identifiers (<code>GH#123</code>, <code>LP#45678</code>, <code>OPEN-999</code>) and tracker provenance.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Conciseness</strong></td>
+                        <td><strong>10%</strong></td>
+                        <td>Information density. Optimal answers are under 250 words. Answers exceeding 350 or 500 words receive lower scores.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>Weighted Formula</h3>
+            <p>
+                <code>Weighted Score = (Accuracy &times; 0.35) + (Relevance &times; 0.25) + (Coverage &times; 0.15) + (Traceability &times; 0.15) + (Conciseness &times; 0.10)</code><br>
+                <code>Quality Percentage = (Weighted Score / 5.0) &times; 100%</code>
+            </p>
+        </section>
+
+        <!-- 6. Hard-Failure Rules -->
+        <section class="doc-section">
+            <h2>6. Hard-Failure Rules</h2>
+            <p>IssueMesh enforces strict safety guardrails:</p>
+            <div class="callout" style="border-left-color: var(--color-red); background: #FFF5F5;">
+                <h4 style="color: var(--color-red); margin-bottom: 0.35rem;">Hard Rule 1: Zero Hallucination Tolerance</h4>
+                <p style="margin-bottom: 0;">
+                    Any fabricated tracker object key, status, date, owner, commit SHA, pull request number, or relation automatically results in:
+                    <br><strong>Accuracy = 0.0 &rarr; Result = FAIL</strong>
+                </p>
+            </div>
+            <div class="callout" style="border-left-color: #E95420; background: #FFF9F5;">
+                <h4 style="color: #E95420; margin-bottom: 0.35rem;">Hard Rule 2: Contradiction Blindness</h4>
+                <p style="margin-bottom: 0;">
+                    When multi-tracker evidence shows explicit conflicting states (e.g. Jira Done vs PR Open), presenting a false unified status or ignoring the conflict caps:
+                    <br><strong>Accuracy &le; 1.0</strong>
+                </p>
+            </div>
+            <div class="callout" style="border-left-color: #772953; background: #FBF7FA;">
+                <h4 style="color: #772953; margin-bottom: 0.35rem;">Hard Rule 3: Unsupported Definitive Claims</h4>
+                <p style="margin-bottom: 0;">
+                    Making unconditional factual assertions without retrieved backing evidence caps:
+                    <br><strong>Accuracy &le; 2.0</strong>
+                </p>
+            </div>
+
+            <h3>Classification Thresholds</h3>
+            <ul>
+                <li><span class="pill-tag" style="color: var(--color-green); background: #e6f4ea;">PASS</span>: Weighted Score &ge; 4.20, Accuracy &ge; 4.0, Relevance &ge; 4.0, zero hard failures.</li>
+                <li><span class="pill-tag" style="color: #b06000; background: #fef7e0;">WEAK</span>: Weighted Score between 3.00 and 4.19, or any individual dimension &lt; 3.0.</li>
+                <li><span class="pill-tag" style="color: var(--color-red); background: #fce8e6;">FAIL</span>: Weighted Score &lt; 3.00, or any hard failure triggered.</li>
+            </ul>
+        </section>
+
+        <!-- 7. Problem Area Taxonomy -->
+        <section class="doc-section">
+            <h2>7. Problem Area Taxonomy</h2>
+            <p>When an evaluation detects deficits, it maps them into standard diagnostic categories:</p>
+            <ul>
+                <li><strong><code>retrieval</code>:</strong> Relevant objects existed in the store or remote tracker but were missed during initial recall.</li>
+                <li><strong><code>query planning</code>:</strong> Suboptimal search terms, missing synonyms, or failure to target key identifiers.</li>
+                <li><strong><code>graph traversal</code>:</strong> Premature traversal budget cutoff, unexpanded relation depth, or graph cycle loops.</li>
+                <li><strong><code>tracker connector</code>:</strong> External API rate limits, authentication failures, or transient network drops.</li>
+                <li><strong><code>freshness/caching</code>:</strong> Stale local records served when remote tracker updates occurred.</li>
+                <li><strong><code>LLM synthesis</code>:</strong> Weak attribution, ambiguous interpretations, or failure to highlight tracker provenance.</li>
+                <li><strong><code>answer formatting</code>:</strong> Excessive verbosity, markdown syntax flaws, or answers exceeding the 250-word budget.</li>
+            </ul>
+        </section>
+
+        <!-- 8. Trend Analysis & Remediation -->
+        <section class="doc-section">
+            <h2>8. Trend Analysis & Remediation Loop</h2>
+            <p>
+                Introspection results are aggregated into 7-day rolling quality trends. The system tracks whether quality is improving or degrading over time, enabling engineers to identify systemic problems:
+            </p>
+            <ul>
+                <li>Inspect full search traces by clicking <strong>Inspect Full Search Run &rarr;</strong> on any evaluation record.</li>
+                <li>Review actionable recommendations provided directly on weak or failed runs.</li>
+                <li>Trigger immediate ad-hoc evaluations using the <strong>Trigger Introspection Now</strong> button to verify system changes immediately.</li>
+            </ul>
+        </section>
+
+        <!-- 9. Safety & Read-Only Guarantees -->
+        <section class="doc-section">
+            <h2>9. Safety & Read-Only Guarantees</h2>
+            <p>
+                IssueMesh adheres to strict operational boundaries during both user searches and autonomous introspection cycles:
+            </p>
+            <ul>
+                <li><strong>Strictly Read-Only:</strong> IssueMesh never writes, updates, closes, comments on, or modifies tickets, issues, pull requests, or bugs in GitHub, Jira, or Launchpad.</li>
+                <li><strong>No Autonomous Code Rewriting:</strong> Introspection identifies weaknesses and surfaces recommendations, but never autonomously alters prompt templates, scoring weights, or application source code.</li>
+                <li><strong>Bounded Resource Budgets:</strong> Every search operates within bounded graph depth, node limits, and timeout protections to prevent runaway CPU or memory usage.</li>
+            </ul>
+        </section>
+
+        <div style="margin-top: 2rem; padding: 1.5rem; background: var(--color-warm-grey); border: 1px solid var(--color-border-grey); border-radius: 2px; text-align: center;">
+            <p style="margin-bottom: 0.75rem; font-weight: 600;">Ready to inspect live introspection metrics?</p>
+            <a href="/introspection" class="btn btn-primary" style="text-decoration: none; display: inline-block;">View Introspection Dashboard</a>
+        </div>
+    </main>
+</body>
+</html>
