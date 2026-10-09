@@ -23,7 +23,7 @@
 10. [Memory, Sources, Health & Introspection Pages](#10-memory-sources-health--introspection-pages)
 11. [Continuous Introspection Engine](#11-continuous-introspection-engine)
 12. [Testing & 30-Test Validation Framework](#12-testing--30-test-validation-framework)
-13. [Portability & Snap Readiness](#13-portability--snap-readiness)
+13. [Portability & Canonical Snap Package](#13-portability--canonical-snap-package)
 14. [Known Limitations](#14-known-limitations)
 15. [Developer Instructions](#15-developer-instructions)
 16. [License](#16-license)
@@ -348,15 +348,64 @@ Release Gates:
 
 ---
 
-## 13. Portability & Snap Readiness
+## 13. Portability & Canonical Snap Package
 
-IssueMesh is built for strict confinement under Canonical Snap (`core24`):
+The application has been bumped to v0.2.8 and packaged into a self-contained, strictly confined Canonical Snap package:
 
-- **Pure Rust TLS**: Uses `rustls` with `webpki-roots`, removing runtime dependencies on OpenSSL or host certificate stores.
-- **Bundled SQLite**: Embeds SQLite directly into the binary with bundled FTS5.
-- **Relocatable Storage**: Automatically respects `$SNAP_USER_COMMON` and `$SNAP_USER_DATA`.
-- **Minimal Plugs**: Requires only `network` and `network-bind`.
-- See [SNAP_PACKAGING.md](SNAP_PACKAGING.md) for complete snapcraft configuration and packaging instructions.
+• **Package Artifact**: `issuemesh_0.2.8_amd64.snap` (2.6MB)  
+• **Base**: `core24` (Ubuntu 24.04 LTS)  
+• **Confinement**: `strict`  
+• **Plugs**: `network`, `network-bind`, `home`  
+
+#### Packaged Components:
+
+```text
+issuemesh_0.2.8_amd64.snap
+├── bin/
+│   ├── issuemesh           # Release binary (Rustls TLS + bundled SQLite FTS5, zero external dynamic .so dependencies)
+│   └── issuemesh-launch    # Environment launcher initializing $SNAP_USER_COMMON and relocatable state
+├── meta/
+│   ├── snap.yaml           # Snap runtime specification (core24, strict, plugs: network, network-bind, home)
+│   └── gui/
+│       ├── issuemesh.desktop # Desktop entry for Ubuntu/GNOME application menus
+│       └── icon.svg        # Canonical aubergine & orange mesh application icon
+└── usr/share/issuemesh/
+    ├── static/             # Full Web Frontend assets (Search, Tutorial, Settings, Memory, Sources, Health, etc.)
+    │   ├── index.html, setup.html, tutorial.html, settings.html, memory.html, ...
+    │   ├── css/style.css
+    │   └── js/app.js
+    └── schema/
+        └── schema.sql      # SQLite Datastore DDL schema (FTS5 table, revisions, embeddings, relations, etc.)
+```
+
+#### Datastore & Runtime Storage in Snap:
+
+When run inside the snap sandbox, IssueMesh automatically detects `SNAP_USER_COMMON` (`~/snap/issuemesh/common/`):
+
+• **SQLite database**: `~/snap/issuemesh/common/issuemesh.db` (auto-created and migrated on first launch, preserved across snap upgrades)  
+• **Secrets**: `~/snap/issuemesh/common/secrets.env` (enforced 0600 permissions)  
+• **Configuration**: `~/snap/issuemesh/common/config.toml`  
+• **Logs**: `~/snap/issuemesh/common/logs/`  
+• **Schema Reference**: `~/snap/issuemesh/common/schema.sql` (copied on first run from `$SNAP/usr/share/issuemesh/schema/schema.sql`)  
+
+#### Local Installation & Testing
+
+To install and run the generated snap on your workstation:
+
+```bash
+# 1. Install under strict confinement
+sudo snap install --dangerous ./issuemesh_0.2.8_amd64.snap
+
+# 2. Connect standard interfaces (if not auto-connected)
+sudo snap connect issuemesh:network
+sudo snap connect issuemesh:network-bind
+sudo snap connect issuemesh:home
+
+# 3. Launch IssueMesh
+issuemesh
+```
+
+See [SNAP_PACKAGING.md](SNAP_PACKAGING.md) for complete snapcraft configuration details, direct packaging scripts, and store distribution guidelines.
 
 ---
 
