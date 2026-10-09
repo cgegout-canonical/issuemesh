@@ -1,17 +1,77 @@
 let currentJobId = null;
 
+function countWords(str) {
+    if (!str || !str.trim()) return 0;
+    return str.trim().split(/\s+/).length;
+}
+
+function clampWords(str, maxWords = 250) {
+    if (!str || !str.trim()) return '';
+    const words = str.trim().split(/\s+/);
+    if (words.length <= maxWords) {
+        return str.trim();
+    }
+    return words.slice(0, maxWords).join(' ') + '...';
+}
+
+function generateSummary(result) {
+    if (result.answer && result.answer.trim().length > 0) {
+        return clampWords(result.answer.trim(), 250);
+    }
+
+    const ranked = result.ranked_results || [];
+    const findings = result.findings || [];
+    const stats = result.stats || {};
+    const trackersCount = stats.trackers_searched ?? 0;
+    const objectsCount = stats.objects_analysed ?? 0;
+    const duration = stats.duration_ms ?? 0;
+
+    let parts = [];
+    if (ranked.length === 0) {
+        parts.push("I could not find sufficient evidence in Jira, GitHub or Launchpad to answer this reliably.");
+        parts.push(`Search completed in ${duration}ms across ${trackersCount} trackers (${objectsCount} objects evaluated). No matching evidence items were found for this query.`);
+    } else {
+        parts.push(`Search completed in ${duration}ms across ${trackersCount} trackers, evaluating ${objectsCount} objects and identifying ${ranked.length} relevant engineering evidence items.`);
+        if (findings.length > 0) {
+            parts.push(`Detected ${findings.length} cross-tracker consistency and workflow findings.`);
+        }
+        const topSummary = ranked.slice(0, 3).map(r => `• [${r.evidence.ref.source.toUpperCase()}] ${r.evidence.title} (${r.evidence.ref.id})`).join('\n');
+        parts.push(`Top ranked matches:\n${topSummary}`);
+    }
+    return clampWords(parts.join('\n\n'), 250);
+}
+
+function copySummary() {
+    const box = document.getElementById('summary-textbox');
+    if (!box) return;
+    navigator.clipboard.writeText(box.value).then(() => {
+        const btn = document.getElementById('copy-summary-btn');
+        if (btn) {
+            const orig = btn.innerText;
+            btn.innerText = 'Copied!';
+            setTimeout(() => { btn.innerText = orig; }, 1500);
+        }
+    }).catch(err => console.warn('Clipboard write failed:', err));
+}
+
 async function runSearch() {
     const q = document.getElementById('query-input').value.trim();
     if (!q) return;
 
+    const progressBar = document.getElementById('search-progress-bar');
     const progressSec = document.getElementById('search-progress');
     const progressLog = document.getElementById('progress-log');
+    const progressBox = document.getElementById('progress-textbox');
+    const statusBadge = document.getElementById('search-progress-status');
     const resultsArea = document.getElementById('results-area');
     const searchBtn = document.getElementById('search-btn');
 
     searchBtn.disabled = true;
-    progressSec.style.display = 'block';
-    progressLog.innerHTML = '<div>&#9673; Submitting search job...</div>';
+    if (progressBar) progressBar.classList.add('active');
+    if (progressSec) progressSec.style.display = 'block';
+    if (statusBadge) statusBadge.innerHTML = '<span class="dot dot-searching"></span> Live';
+    if (progressBox) progressBox.value = '◉ Submitting search job...';
+    if (progressLog) progressLog.innerHTML = '<div>&#9673; Submitting search job...</div>';
     resultsArea.innerHTML = '';
 
     try {
@@ -28,7 +88,13 @@ async function runSearch() {
 
         const data = await resp.json();
         currentJobId = data.job_id;
-        progressLog.innerHTML += `<div>&#10003; Job created: <code>${currentJobId}</code>. Listening for live events...</div>`;
+        if (progressBox) {
+            progressBox.value += `\n✓ Job created: ${currentJobId}. Listening for live events...`;
+            progressBox.scrollTop = progressBox.scrollHeight;
+        }
+        if (progressLog) {
+            progressLog.innerHTML += `<div>&#10003; Job created: <code>${currentJobId}</code>. Listening for live events...</div>`;
+        }
 
         // Connect SSE stream
         const eventSource = new EventSource(`/api/search/${currentJobId}/events`);
@@ -36,10 +102,12 @@ async function runSearch() {
         eventSource.onmessage = (event) => {
             try {
                 const ev = JSON.parse(event.data);
-                handleSearchEvent(ev, progressLog);
+                handleSearchEvent(ev, progressLog, progressBox);
 
                 if (ev.type === 'Complete' || ev.type === 'Error') {
                     eventSource.close();
+                    if (progressBar) progressBar.classList.remove('active');
+                    if (statusBadge) statusBadge.innerHTML = '<span class="dot dot-idle"></span> Done';
                     searchBtn.disabled = false;
                     loadStructuredResult(currentJobId);
                 }
@@ -51,73 +119,108 @@ async function runSearch() {
         eventSource.onerror = (e) => {
             console.warn("SSE connection closed or completed:", e);
             eventSource.close();
+            if (progressBar) progressBar.classList.remove('active');
+            if (statusBadge) statusBadge.innerHTML = '<span class="dot dot-idle"></span> Done';
             searchBtn.disabled = false;
             loadStructuredResult(currentJobId);
         };
     } catch (e) {
-        progressLog.innerHTML += `<div style="color: var(--color-red);">&#10007; Search error: ${escapeHtml(e.message || String(e))}</div>`;
+        if (progressBar) progressBar.classList.remove('active');
+        if (statusBadge) statusBadge.innerHTML = '<span class="dot dot-failed"></span> Error';
+        if (progressBox) {
+            progressBox.value += `\n✗ Search error: ${e.message || String(e)}`;
+            progressBox.scrollTop = progressBox.scrollHeight;
+        }
+        if (progressLog) {
+            progressLog.innerHTML += `<div style="color: var(--color-red);">&#10007; Search error: ${escapeHtml(e.message || String(e))}</div>`;
+        }
         searchBtn.disabled = false;
     }
 }
 
-function handleSearchEvent(ev, logElem) {
+function handleSearchEvent(ev, logElem, boxElem) {
     let msg = '';
+    let plainText = '';
+
     switch (ev.type) {
         case 'PlanningStarted':
             msg = '&#9673; Planning search strategy...';
+            plainText = '◉ Planning search strategy...';
             break;
         case 'PlanningCompleted':
             msg = '&#10003; Planning completed';
+            plainText = '✓ Planning completed';
             break;
         case 'LocalSearchStarted':
             msg = '&#9673; Searching local datastore (FTS5)...';
+            plainText = '◉ Searching local datastore (FTS5)...';
             break;
         case 'LocalSearchCompleted':
             msg = `&#10003; Local search found ${ev.data?.objects ?? 0} objects`;
+            plainText = `✓ Local search found ${ev.data?.objects ?? 0} objects`;
             break;
         case 'SourceSearchStarted':
             msg = `&#9673; Querying remote source: <strong>${ev.data?.source ?? ''}</strong>...`;
+            plainText = `◉ Querying remote source: ${ev.data?.source ?? ''}...`;
             break;
         case 'SourceSearchCompleted':
             msg = `&#10003; Retrieved ${ev.data?.objects ?? 0} objects from ${ev.data?.source ?? ''}`;
+            plainText = `✓ Retrieved ${ev.data?.objects ?? 0} objects from ${ev.data?.source ?? ''}`;
             break;
         case 'DeepReadStarted':
             msg = `&#9673; Deep reading object ${ev.data?.object?.id ?? ''}...`;
+            plainText = `◉ Deep reading object ${ev.data?.object?.id ?? ''}...`;
             break;
         case 'DeepReadCompleted':
             msg = `&#10003; Finished deep read for ${ev.data?.object?.id ?? ''}`;
+            plainText = `✓ Finished deep read for ${ev.data?.object?.id ?? ''}`;
             break;
         case 'GraphExpansion':
             msg = `&#10003; Graph frontier expanded (depth ${ev.data?.depth ?? 0}, nodes: ${ev.data?.nodes ?? 0})`;
+            plainText = `✓ Graph frontier expanded (depth ${ev.data?.depth ?? 0}, nodes: ${ev.data?.nodes ?? 0})`;
             break;
         case 'ConsistencyCheckStarted':
             msg = '&#9673; Performing cross-tracker consistency analysis...';
+            plainText = '◉ Performing cross-tracker consistency analysis...';
             break;
         case 'ConsistencyCheckCompleted':
             msg = `&#10003; Consistency checks complete (${ev.data?.findings ?? 0} findings)`;
+            plainText = `✓ Consistency checks complete (${ev.data?.findings ?? 0} findings)`;
             break;
         case 'SynthesisStarted':
             msg = '&#9673; Synthesizing evidence...';
+            plainText = '◉ Synthesizing evidence...';
             break;
         case 'Complete': {
             const stats = ev.data || {};
             msg = `<strong>&#10003; Search complete!</strong> Analyzed ${stats.objects_analysed ?? 0} objects, ${stats.deep_reads ?? 0} deep reads, ${stats.relations_followed ?? 0} relations followed across ${stats.trackers_searched ?? 0} trackers (${stats.duration_ms ?? 0}ms)`;
+            plainText = `✓ Search complete! Analyzed ${stats.objects_analysed ?? 0} objects across ${stats.trackers_searched ?? 0} trackers (${stats.duration_ms ?? 0}ms)`;
             break;
         }
         case 'Warning':
             msg = `<span style="color: var(--color-orange);">&#9888; Warning: ${escapeHtml(ev.data ?? '')}</span>`;
+            plainText = `⚠ Warning: ${ev.data ?? ''}`;
             break;
         case 'Error':
             msg = `<span style="color: var(--color-red);">&#10007; Error: ${escapeHtml(ev.data ?? '')}</span>`;
+            plainText = `✗ Error: ${ev.data ?? ''}`;
             break;
         default:
             msg = `Event: ${escapeHtml(JSON.stringify(ev))}`;
+            plainText = `Event: ${JSON.stringify(ev)}`;
     }
 
-    const row = document.createElement('div');
-    row.innerHTML = msg;
-    logElem.appendChild(row);
-    logElem.scrollTop = logElem.scrollHeight;
+    if (boxElem && plainText) {
+        boxElem.value += '\n' + plainText;
+        boxElem.scrollTop = boxElem.scrollHeight;
+    }
+
+    if (logElem && msg) {
+        const row = document.createElement('div');
+        row.innerHTML = msg;
+        logElem.appendChild(row);
+        logElem.scrollTop = logElem.scrollHeight;
+    }
 }
 
 async function loadStructuredResult(jobId) {
@@ -138,20 +241,27 @@ function renderStructuredResult(jobId, result) {
     const container = document.getElementById('results-area');
     let html = '';
 
-    // 1. Synthesized Summary / Answer (SPEC.md §37)
-    if (result.answer) {
-        html += `
-            <div class="card" style="border-left: 4px solid var(--color-orange);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                    <div class="card-title" style="margin: 0;">Synthesized Engineering Analysis</div>
+    // 1. Textbox with summary of results (guaranteed <= 250 words)
+    const summaryText = generateSummary(result);
+    const wordCount = countWords(summaryText);
+    const summaryLines = summaryText.split('\n').length;
+    const calculatedRows = Math.max(4, Math.min(10, summaryLines + 2));
+
+    html += `
+        <div class="summary-card">
+            <div class="summary-header">
+                <div class="summary-title-wrapper">
+                    <h2 class="summary-title">Summary of Results</h2>
+                    <span class="summary-word-badge" id="summary-word-counter">${wordCount} / 250 words</span>
+                </div>
+                <div class="summary-actions">
+                    <button type="button" id="copy-summary-btn" class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.3rem 0.6rem;" onclick="copySummary()">Copy Summary</button>
                     <a href="/search/${encodeURIComponent(jobId)}/run" class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.3rem 0.6rem; text-decoration: none;">Inspect Run</a>
                 </div>
-                <div style="white-space: pre-wrap; line-height: 1.6; color: var(--color-dark-text); font-size: 1.05rem;">
-                    ${escapeHtml(result.answer)}
-                </div>
             </div>
-        `;
-    }
+            <textarea id="summary-textbox" class="summary-textbox" readonly rows="${calculatedRows}">${escapeHtml(summaryText)}</textarea>
+        </div>
+    `;
 
     // 2. Consistency Warnings / Discrepancies (SPEC.md §38)
     if (result.findings && result.findings.length > 0) {
@@ -169,14 +279,14 @@ function renderStructuredResult(jobId, result) {
                         <span style="color: var(--color-muted-text); font-size: 0.85rem;">·</span>
                         <span style="font-size: 0.85rem; color: var(--color-muted-text);">${f.severity}</span>
                     </div>
-                    <div style="font-size: 0.95rem; color: var(--color-dark-text);">${escapeHtml(f.description)}</div>
+                    <div style="font-size: 0.95rem; color: var(--color-dark-text);">${escapeHtml(f.explanation || f.description || '')}</div>
                 </div>
             `;
         }
         html += `</div></div>`;
     }
 
-    // 3. Key Findings & Ranked Evidence Cards (SPEC.md §37, §38)
+    // 3. Ranked Evidence Cards listed below (SPEC.md §37, §38)
     const ranked = result.ranked_results || [];
     html += `
         <div style="margin-top: 1.5rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">

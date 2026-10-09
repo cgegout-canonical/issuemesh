@@ -23,7 +23,114 @@ pub struct DeepSearchResult {
     pub relations_followed: Vec<crate::connectors::Relation>,
     pub stats: SearchStats,
     pub answer: Option<String>,
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }
+
+pub const DEFAULT_ANALYSIS_ENGINE_PROMPT: &str = r#"You are the analysis engine for **IssueMesh**, an engineering search system covering **Jira, GitHub and Launchpad**.
+
+Your goal is to answer the user's exact question using only evidence retrieved from these systems.
+
+## Search behaviour
+
+Before answering:
+
+1. Identify precisely what the user is asking.
+2. Search all relevant available sources:
+   - Jira issues, links, comments, changelogs and remote links.
+   - GitHub issues, pull requests, comments, reviews, commits and references.
+   - Launchpad bugs, tasks, comments, activity and linked objects.
+3. Follow relevant cross-references between Jira, GitHub and Launchpad.
+4. Prefer direct and native relationships over inferred ones.
+5. Deep-read the most relevant objects when summaries are insufficient.
+6. Continue searching related objects when necessary to answer the question, within the configured search limits.
+7. Ignore objects that only match keywords but do not materially help answer the question.
+
+## Evidence rules
+
+Use **only information present in the retrieved evidence**.
+
+Never invent:
+
+- issue or bug IDs
+- PRs or commits
+- statuses
+- dates
+- owners
+- causes
+- dependencies
+- decisions
+- roadmap commitments
+- relationships between objects
+
+Only claim an object links to, implements, or blocks another object if that explicit relationship is present in the Retrieved Evidence or Discovered Tracker Relationships. Never assume or guess that an open issue/PR relates to a closed issue just because both appeared in the search results.
+
+Never use your general knowledge to fill gaps in tracker evidence.
+
+When sources disagree, explicitly mention the disagreement and prefer the newest authoritative tracker information.
+
+Distinguish clearly between:
+
+- **Fact** — directly supported by retrieved evidence.
+- **Inference** — a conclusion reasonably derived from several pieces of evidence.
+
+Do not present an inference as a fact.
+
+If any tracker was unavailable or failed (noted in Tracker Availability Warnings), explicitly mention this limitation in your answer (e.g. "Note: Launchpad could not be queried. This answer is based on Jira and GitHub and may therefore be incomplete."). Never hide tracker unavailability or invent missing evidence.
+
+If the user's question is ambiguous (e.g. asking for "the networking issue" when multiple distinct networking issues exist), explicitly expose the ambiguity, summarize the key candidate issues with their identifiers and statuses, and ask for clarification rather than arbitrarily selecting one.
+
+Verify semantic relevance beyond superficial keyword overlap. If a specific capability or technology (e.g. quantum-network routing) is asked about, but retrieved items only discuss unrelated networking topics, reject the false match and report that no evidence exists for that specific capability.
+
+When contradictory states exist across systems (e.g. Jira marked Done, GitHub PR still Open, Launchpad Fix Committed), explicitly state each system's status and highlight the contradiction. Never invent a unified status or assume one status supersedes the other without explicit evidence.
+
+If an object references a linked issue or PR that could not be retrieved (e.g. 404/403 or unresolved reference), explicitly acknowledge that the referenced object is inaccessible or unresolved. Never invent its title, status, or contents.
+
+Treat duplicate references to the same PR or issue across different sources as references to a single canonical object. Do not artificially inflate importance or treat duplicate links as separate evidence.
+
+For large discussion threads or complex tickets, prioritize the latest consensus, recent decisions, and current resolution status. Keep the complete answer strictly under 250 words.
+
+If the evidence does not answer the question, say:
+
+**"I could not find sufficient evidence in Jira, GitHub or Launchpad to answer this reliably."**
+
+Then briefly state what was found and what information is missing.
+
+## Answer quality
+
+Answer the question directly. Do not provide a generic summary of everything found.
+
+Prioritise:
+
+1. direct answer
+2. strongest supporting evidence
+3. important dependencies or contradictions
+4. relevant current status
+
+Reference important objects using their real identifiers, for example `OPEN-4679`, `LP#2167315`, or `canonical/project#123`.
+
+Avoid unnecessary technical detail unless it helps answer the question.
+
+Be precise, concise and easy to scan.
+
+Use short paragraphs and bullets when useful.
+
+Do not repeat information.
+
+Do not describe your search process unless it materially affects confidence in the answer.
+
+The complete answer must be **less than 250 words**.
+
+Before returning the answer, verify:
+
+- Does this actually answer the user's question?
+- Is every factual claim supported by retrieved evidence?
+- Did I accidentally infer something and state it as fact?
+- Did I overlook a contradictory or newer object?
+- Are all cited identifiers present in the retrieved evidence?
+- Can anything be removed without reducing the usefulness of the answer?
+
+If any answer is no, correct the response before returning it."#;
 
 pub struct SearchOrchestrator;
 
@@ -56,27 +163,27 @@ impl SearchOrchestrator {
         };
 
         let model_client = if cfg.model.enabled {
-            let base_url = cfg
-                .model
-                .base_url
+            let base_url = sec
+                .openai_base_url
                 .clone()
+                .or_else(|| cfg.model.base_url.clone())
                 .unwrap_or_else(|| "http://localhost:11434/v1".to_string());
-            let model_name = cfg
-                .model
-                .model
+            let model_name = sec
+                .openai_model
                 .clone()
+                .or_else(|| cfg.model.model.clone())
                 .unwrap_or_else(|| "gpt-4o-mini".to_string());
-            let embedding_model = cfg
-                .model
-                .embedding_model
+            let embedding_model = sec
+                .openai_embedding_model
                 .clone()
+                .or_else(|| cfg.model.embedding_model.clone())
                 .unwrap_or_else(|| "text-embedding-3-small".to_string());
             ModelClient::new(
                 &base_url,
                 sec.openai_api_key.clone(),
                 &model_name,
                 &embedding_model,
-                std::time::Duration::from_millis(5000),
+                std::time::Duration::from_millis(60000),
             )
             .ok()
         } else {
@@ -93,6 +200,76 @@ impl SearchOrchestrator {
         let mut lexical_scores: HashMap<String, f32> = HashMap::new();
         let mut semantic_scores: HashMap<String, f32> = HashMap::new();
         let mut depths: HashMap<String, u8> = HashMap::new();
+
+        // 2a. Direct resolution for explicit references in the query
+        let explicit_refs = crate::util::extract_references(query, None);
+        for r in &explicit_refs {
+            let key = r.to_key();
+            let mut found_ev = None;
+
+            match r.source.as_str() {
+                "jira" if cfg.jira.enabled => {
+                    if let Some(jira_url) = sec.jira_url.as_ref() {
+                        if let Ok(jira) = JiraConnector::new(
+                            jira_url,
+                            sec.jira_email.clone(),
+                            sec.jira_token.clone(),
+                            cfg.jira.default_project.clone(),
+                        ) {
+                            if let Ok(Some(ev)) = jira.get_object(r).await {
+                                let _ = state.store.upsert_object(ev.clone()).await;
+                                if let Ok(rels) = jira.get_related(r, None).await {
+                                    let _ = state.store.insert_relations(rels).await;
+                                }
+                                found_ev = Some(ev);
+                            }
+                        }
+                    }
+                }
+                "launchpad" if cfg.launchpad.enabled => {
+                    if let Ok(lp) = LaunchpadConnector::new(
+                        "https://api.launchpad.net/1.0",
+                        cfg.launchpad.default_project.clone(),
+                    ) {
+                        if let Ok(Some(ev)) = lp.get_object(r).await {
+                            let _ = state.store.upsert_object(ev.clone()).await;
+                            if let Ok(rels) = lp.get_related(r, None).await {
+                                let _ = state.store.insert_relations(rels).await;
+                            }
+                            found_ev = Some(ev);
+                        }
+                    }
+                }
+                "github" if cfg.github.enabled => {
+                    if let Ok(gh) = GitHubConnector::new(
+                        "https://api.github.com",
+                        sec.github_token.clone(),
+                        cfg.github.default_org.clone(),
+                    ) {
+                        if let Ok(Some(ev)) = gh.get_object(r).await {
+                            let _ = state.store.upsert_object(ev.clone()).await;
+                            if let Ok(rels) = gh.get_related(r, None).await {
+                                let _ = state.store.insert_relations(rels).await;
+                            }
+                            found_ev = Some(ev);
+                        }
+                    }
+                }
+                _ => {}
+            }
+
+            if found_ev.is_none() {
+                if let Ok(Some(ev)) = state.store.get_object(r).await {
+                    found_ev = Some(ev);
+                }
+            }
+
+            if let Some(ev) = found_ev {
+                depths.insert(key.clone(), 0);
+                lexical_scores.insert(key.clone(), 1.0);
+                candidate_evidence.insert(key, ev);
+            }
+        }
 
         if let Ok(fts_hits) = state.store.search_fts(&plan.query, 50).await {
             for (idx, hit) in fts_hits.into_iter().enumerate() {
@@ -149,11 +326,17 @@ impl SearchOrchestrator {
         // 3. Remote Tracker Searches Concurrently
         let search_req = SearchQuery {
             query: plan.query.clone(),
+            projects: plan.projects.clone(),
+            repositories: plan.repositories.clone(),
+            people: plan.people.clone(),
+            time_from: plan.time_from,
+            time_to: plan.time_to,
             max_results: plan.max_remote_results.min(20),
             ..Default::default()
         };
 
         let mut trackers_searched = 0;
+        let mut warnings: Vec<String> = Vec::new();
 
         // GitHub search
         if cfg.github.enabled {
@@ -171,9 +354,11 @@ impl SearchOrchestrator {
                     Ok(items) => {
                         let count = items.len();
                         stats.objects_analysed += count;
-                        for item in items {
+                        for (idx, item) in items.into_iter().enumerate() {
                             let key = item.r#ref.to_key();
                             depths.entry(key.clone()).or_insert(0);
+                            let score = (0.95 - (idx as f32 * 0.02)).max(0.3);
+                            lexical_scores.entry(key.clone()).or_insert(score);
                             let _ = state.store.upsert_object(item.clone()).await;
                             candidate_evidence.insert(key, item);
                         }
@@ -184,7 +369,9 @@ impl SearchOrchestrator {
                         .await;
                     }
                     Err(e) => {
-                        emit(SearchEvent::Warning(format!("GitHub search failed: {e}"))).await;
+                        let msg = format!("GitHub search failed: {e}");
+                        emit(SearchEvent::Warning(msg.clone())).await;
+                        warnings.push(msg);
                         emit(SearchEvent::SourceSearchCompleted {
                             source: Source::GitHub,
                             objects: 0,
@@ -192,7 +379,11 @@ impl SearchOrchestrator {
                         .await;
                     }
                 }
+            } else {
+                warnings.push("Failed to initialize GitHub connector.".to_string());
             }
+        } else if plan.sources.contains(&Source::GitHub) {
+            warnings.push("GitHub is disabled in configuration.".to_string());
         }
 
         // Jira search
@@ -213,9 +404,11 @@ impl SearchOrchestrator {
                         Ok(items) => {
                             let count = items.len();
                             stats.objects_analysed += count;
-                            for item in items {
+                            for (idx, item) in items.into_iter().enumerate() {
                                 let key = item.r#ref.to_key();
                                 depths.entry(key.clone()).or_insert(0);
+                                let score = (0.95 - (idx as f32 * 0.02)).max(0.3);
+                                lexical_scores.entry(key.clone()).or_insert(score);
                                 let _ = state.store.upsert_object(item.clone()).await;
                                 candidate_evidence.insert(key, item);
                             }
@@ -226,7 +419,9 @@ impl SearchOrchestrator {
                             .await;
                         }
                         Err(e) => {
-                            emit(SearchEvent::Warning(format!("Jira search failed: {e}"))).await;
+                            let msg = format!("Jira search failed: {e}");
+                            emit(SearchEvent::Warning(msg.clone())).await;
+                            warnings.push(msg);
                             emit(SearchEvent::SourceSearchCompleted {
                                 source: Source::Jira,
                                 objects: 0,
@@ -234,8 +429,14 @@ impl SearchOrchestrator {
                             .await;
                         }
                     }
+                } else {
+                    warnings.push("Failed to initialize Jira connector.".to_string());
                 }
+            } else {
+                warnings.push("Jira URL not configured; Jira search skipped.".to_string());
             }
+        } else if plan.sources.contains(&Source::Jira) {
+            warnings.push("Jira is disabled in configuration.".to_string());
         }
 
         // Launchpad search
@@ -253,9 +454,11 @@ impl SearchOrchestrator {
                     Ok(items) => {
                         let count = items.len();
                         stats.objects_analysed += count;
-                        for item in items {
+                        for (idx, item) in items.into_iter().enumerate() {
                             let key = item.r#ref.to_key();
                             depths.entry(key.clone()).or_insert(0);
+                            let score = (0.95 - (idx as f32 * 0.02)).max(0.3);
+                            lexical_scores.entry(key.clone()).or_insert(score);
                             let _ = state.store.upsert_object(item.clone()).await;
                             candidate_evidence.insert(key, item);
                         }
@@ -266,10 +469,9 @@ impl SearchOrchestrator {
                         .await;
                     }
                     Err(e) => {
-                        emit(SearchEvent::Warning(format!(
-                            "Launchpad search failed: {e}"
-                        )))
-                        .await;
+                        let msg = format!("Launchpad search failed: {e}");
+                        emit(SearchEvent::Warning(msg.clone())).await;
+                        warnings.push(msg);
                         emit(SearchEvent::SourceSearchCompleted {
                             source: Source::Launchpad,
                             objects: 0,
@@ -277,10 +479,58 @@ impl SearchOrchestrator {
                         .await;
                     }
                 }
+            } else {
+                warnings.push("Failed to initialize Launchpad connector.".to_string());
             }
+        } else if plan.sources.contains(&Source::Launchpad) {
+            warnings.push("Launchpad is disabled in configuration.".to_string());
         }
 
         stats.trackers_searched = trackers_searched;
+
+        // Boost candidates whose title, container, or identifier matches the target query or explicit references
+        let q_lower = plan.query.to_lowercase();
+        let raw_q_lower = query.to_lowercase();
+        let proj_lowers: Vec<String> = plan.projects.iter().map(|p| p.to_lowercase()).collect();
+        let explicit_ids: Vec<String> = explicit_refs.iter().map(|r| r.id.to_lowercase()).collect();
+        let boost_candidates = |ev_map: &HashMap<String, Evidence>,
+                                lex: &mut HashMap<String, f32>| {
+            for (key, ev) in ev_map {
+                let id_low = ev.r#ref.id.to_lowercase();
+                let title_low = ev.title.to_lowercase();
+                let cont_low = ev.container.to_lowercase();
+
+                let id_match =
+                    explicit_ids.iter().any(|id| id == &id_low) || raw_q_lower.contains(&id_low);
+                let title_match = (!q_lower.is_empty() && title_low.contains(&q_lower))
+                    || proj_lowers
+                        .iter()
+                        .any(|p| !p.is_empty() && title_low.contains(p));
+                let cont_match = (!q_lower.is_empty() && cont_low.contains(&q_lower))
+                    || proj_lowers
+                        .iter()
+                        .any(|p| !p.is_empty() && cont_low.contains(p));
+
+                if id_match {
+                    let s = lex.entry(key.clone()).or_insert(1.0);
+                    if *s < 1.0 {
+                        *s = 1.0;
+                    }
+                } else if title_match {
+                    let s = lex.entry(key.clone()).or_insert(0.9);
+                    if *s < 0.9 {
+                        *s = 0.9;
+                    }
+                } else if cont_match {
+                    let s = lex.entry(key.clone()).or_insert(0.75);
+                    if *s < 0.75 {
+                        *s = 0.75;
+                    }
+                }
+            }
+        };
+
+        boost_candidates(&candidate_evidence, &mut lexical_scores);
 
         // 4. Initial Candidate Ranking & Deep-read best candidates
         let weights = Weights::default();
@@ -384,6 +634,51 @@ impl SearchOrchestrator {
                 depths.insert(k.clone(), node.depth as u8);
                 if let Some(ev) = node.evidence {
                     candidate_evidence.insert(k, ev);
+                } else {
+                    let ev_opt = match node.r#ref.source.as_str() {
+                        "jira" if cfg.jira.enabled => {
+                            if let Some(jira_url) = sec.jira_url.as_ref() {
+                                if let Ok(jira) = JiraConnector::new(
+                                    jira_url,
+                                    sec.jira_email.clone(),
+                                    sec.jira_token.clone(),
+                                    cfg.jira.default_project.clone(),
+                                ) {
+                                    jira.get_object(&node.r#ref).await.unwrap_or(None)
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        }
+                        "launchpad" if cfg.launchpad.enabled => {
+                            if let Ok(lp) = LaunchpadConnector::new(
+                                "https://api.launchpad.net/1.0",
+                                cfg.launchpad.default_project.clone(),
+                            ) {
+                                lp.get_object(&node.r#ref).await.unwrap_or(None)
+                            } else {
+                                None
+                            }
+                        }
+                        "github" if cfg.github.enabled => {
+                            if let Ok(gh) = GitHubConnector::new(
+                                "https://api.github.com",
+                                sec.github_token.clone(),
+                                cfg.github.default_org.clone(),
+                            ) {
+                                gh.get_object(&node.r#ref).await.unwrap_or(None)
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
+                    };
+                    if let Some(ev) = ev_opt {
+                        let _ = state.store.upsert_object(ev.clone()).await;
+                        candidate_evidence.insert(k, ev);
+                    }
                 }
             }
 
@@ -406,6 +701,7 @@ impl SearchOrchestrator {
         .await;
 
         // 7. Final Ranking
+        boost_candidates(&candidate_evidence, &mut lexical_scores);
         let final_ranked = rank_candidates(
             all_evidence,
             &lexical_scores,
@@ -421,24 +717,119 @@ impl SearchOrchestrator {
             // Build bounded context from top ranked results
             let top_context: Vec<String> = final_ranked
                 .iter()
-                .take(5)
+                .take(15)
                 .map(|r| {
-                    format!(
-                        "- [{}]: {} ({}) - {}",
-                        r.evidence.r#ref.to_key(),
-                        r.evidence.title,
-                        r.evidence.state,
-                        r.evidence.snippet
-                    )
+                    let ev = &r.evidence;
+                    let real_id = match ev.r#ref.source.as_str() {
+                        "jira" => ev.r#ref.id.clone(),
+                        "launchpad" => {
+                            if ev.r#ref.id.starts_with("LP#") {
+                                ev.r#ref.id.clone()
+                            } else {
+                                format!("LP#{}", ev.r#ref.id)
+                            }
+                        }
+                        "github" => {
+                            if ev.r#ref.id.contains('#') {
+                                ev.r#ref.id.clone()
+                            } else {
+                                let repo = ev
+                                    .container
+                                    .strip_prefix("github:")
+                                    .unwrap_or(&ev.container);
+                                if !repo.is_empty() {
+                                    format!("{}#{}", repo, ev.r#ref.id)
+                                } else {
+                                    ev.r#ref.id.clone()
+                                }
+                            }
+                        }
+                        _ => ev.r#ref.to_key(),
+                    };
+
+                    let mut lines = vec![
+                        format!("Identifier: {}", real_id),
+                        format!("Source: {} ({})", ev.r#ref.source, ev.r#ref.r#type),
+                        format!("Title: {}", ev.title),
+                        format!("State: {}", ev.state),
+                    ];
+                    if let Some(ref dt) = ev.updated_at {
+                        lines.push(format!("Updated: {}", dt));
+                    }
+                    if !ev.author.is_empty() {
+                        lines.push(format!("Author: {}", ev.author));
+                    }
+                    if let Some(ref body) = ev.body {
+                        if !body.is_empty() {
+                            let truncated: String = body.chars().take(1200).collect();
+                            lines.push(format!("Content: {}", truncated));
+                        } else if !ev.snippet.is_empty() {
+                            lines.push(format!("Snippet: {}", ev.snippet));
+                        }
+                    } else if !ev.snippet.is_empty() {
+                        lines.push(format!("Snippet: {}", ev.snippet));
+                    }
+                    lines.join("\n")
                 })
                 .collect();
 
-            let sys_prompt = "You are an assistant synthesizing software tracker evidence (issues, PRs, bugs). Answer concisely citing keys.";
-            let user_prompt = format!(
-                "Query: {}\n\nEvidence:\n{}\n\nSynthesize findings and any inconsistencies found:",
-                query,
-                top_context.join("\n")
-            );
+            let sys_prompt = cfg
+                .model
+                .system_prompt
+                .as_deref()
+                .unwrap_or(DEFAULT_ANALYSIS_ENGINE_PROMPT);
+
+            let evidence_section = if top_context.is_empty() {
+                "No matching evidence retrieved from Jira, GitHub, or Launchpad.".to_string()
+            } else {
+                top_context.join("\n\n---\n\n")
+            };
+
+            let mut prompt_sections = vec![format!(
+                "User Question: {}\n\nRetrieved Evidence:\n{}",
+                query, evidence_section
+            )];
+
+            if !collected_relations.is_empty() {
+                let rels_str: Vec<String> = collected_relations
+                    .iter()
+                    .take(25)
+                    .map(|r| {
+                        format!(
+                            "- {} {} {}",
+                            r.from.to_key(),
+                            r.relation_type,
+                            r.to.to_key()
+                        )
+                    })
+                    .collect();
+                prompt_sections.push(format!(
+                    "Discovered Tracker Relationships:\n{}",
+                    rels_str.join("\n")
+                ));
+            }
+
+            if !findings.is_empty() {
+                let findings_context: Vec<String> = findings
+                    .iter()
+                    .map(|f| format!("- [{}] {}", f.finding_type, f.explanation))
+                    .collect();
+                prompt_sections.push(format!(
+                    "Tracker Inconsistencies Detected:\n{}",
+                    findings_context.join("\n")
+                ));
+            }
+
+            if !warnings.is_empty() {
+                let warnings_context: Vec<String> =
+                    warnings.iter().map(|w| format!("- {}", w)).collect();
+                prompt_sections.push(format!(
+                    "Tracker Availability Warnings & Limitations:\n{}",
+                    warnings_context.join("\n")
+                ));
+            }
+
+            let user_prompt = prompt_sections.join("\n\n");
 
             let messages = vec![
                 ChatMessage {
@@ -451,7 +842,13 @@ impl SearchOrchestrator {
                 },
             ];
 
-            mc.chat_completion(messages).await.ok()
+            match mc.chat_completion(messages).await {
+                Ok(resp) => Some(resp),
+                Err(e) => {
+                    eprintln!("Synthesis chat_completion error: {e:#}");
+                    None
+                }
+            }
         } else {
             None
         };
@@ -497,6 +894,7 @@ impl SearchOrchestrator {
             relations_followed: collected_relations,
             stats,
             answer,
+            warnings,
         }
     }
 }

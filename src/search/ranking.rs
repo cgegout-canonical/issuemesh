@@ -116,7 +116,10 @@ pub fn rank_candidates(
     for ev in candidates {
         let key = ev.r#ref.to_key();
         let lexical = lexical_scores.get(&key).copied().unwrap_or(0.0);
-        let semantic = semantic_scores.get(&key).copied().unwrap_or(0.0);
+        let mut semantic = semantic_scores.get(&key).copied().unwrap_or(0.0);
+        if lexical >= 0.85 && semantic == 0.0 {
+            semantic = 0.85;
+        }
         let depth = depths.get(&key).copied().unwrap_or(1);
         let graph_prox = compute_graph_proximity_score(depth);
 

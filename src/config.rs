@@ -155,6 +155,7 @@ pub struct ModelConfig {
     pub base_url: Option<String>,
     pub model: Option<String>,
     pub embedding_model: Option<String>,
+    pub system_prompt: Option<String>,
 }
 
 impl Config {

@@ -1,9 +1,10 @@
 [package]
 name = "issuemesh"
-version = "0.1.0"
+version = "0.2.5"
 edition = "2021"
 description = "Local engineering issue intelligence across GitHub, Jira and Launchpad"
 authors = ["IssueMesh Authors"]
+license = "MIT"
 
 [dependencies]
 tokio = { version = "1.43", features = ["full"] }

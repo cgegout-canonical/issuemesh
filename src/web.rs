@@ -64,6 +64,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/test/jira", post(test_jira_handler))
         .route("/api/test/launchpad", post(test_launchpad_handler))
         .route("/api/test/model", post(test_model_handler))
+        .route(
+            "/api/models",
+            post(discover_models_handler).get(get_models_handler),
+        )
         // Static assets
         .route("/static/{*file}", get(static_handler))
         .with_state(Arc::new(state))
@@ -1052,63 +1056,50 @@ pub async fn probe_model_endpoint(
     chat_model: Option<&str>,
     embed_model: Option<&str>,
 ) -> ModelProbeResult {
-    let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            return ModelProbeResult {
-                ok: false,
-                detail: format!("Failed to build HTTP client: {e}"),
-                chat_model: None,
-                embedding_model: None,
-                latency_ms: 0,
-            };
-        }
-    };
-
-    let trimmed = base_url.trim_end_matches('/');
-    let models_url = format!("{trimmed}/models");
-
     let t0 = Instant::now();
-    let mut req = client.get(&models_url);
-    if let Some(key) = api_key {
-        if !key.is_empty() {
-            req = req.bearer_auth(key);
-        }
-    }
+    let discovery = crate::model::ModelClient::discover_models(
+        base_url,
+        api_key,
+        std::time::Duration::from_secs(10),
+    )
+    .await;
+    let latency_ms = t0.elapsed().as_millis() as i64;
 
-    match req.send().await {
-        Ok(res) => {
-            let latency_ms = t0.elapsed().as_millis() as i64;
-            if res.status().is_success() {
-                ModelProbeResult {
-                    ok: true,
-                    detail: format!("Model endpoint reachable (HTTP {})", res.status()),
-                    chat_model: chat_model.map(|s| s.to_string()),
-                    embedding_model: embed_model.map(|s| s.to_string()),
-                    latency_ms,
-                }
-            } else {
-                let status = res.status();
-                let err_text = res.text().await.unwrap_or_default();
-                ModelProbeResult {
-                    ok: false,
-                    detail: format!("HTTP {status}: {err_text}"),
-                    chat_model: None,
-                    embedding_model: None,
-                    latency_ms,
-                }
-            }
+    if discovery.ok {
+        let resolved_chat = if let Some(cm) = chat_model.filter(|s| !s.is_empty()) {
+            Some(cm.to_string())
+        } else {
+            discovery.chat_models.first().map(|m| m.id.clone())
+        };
+
+        let resolved_embed = if let Some(em) = embed_model.filter(|s| !s.is_empty()) {
+            Some(em.to_string())
+        } else {
+            discovery.embedding_models.first().map(|m| m.id.clone())
+        };
+
+        ModelProbeResult {
+            ok: true,
+            detail: format!(
+                "Model endpoint reachable, discovered {} models ({} chat, {} embedding)",
+                discovery.models.len(),
+                discovery.chat_models.len(),
+                discovery.embedding_models.len()
+            ),
+            chat_model: resolved_chat,
+            embedding_model: resolved_embed,
+            latency_ms,
         }
-        Err(e) => ModelProbeResult {
+    } else {
+        ModelProbeResult {
             ok: false,
-            detail: format!("Connection failed: {e}"),
+            detail: discovery
+                .error
+                .unwrap_or_else(|| "Model endpoint query failed".to_string()),
             chat_model: None,
             embedding_model: None,
-            latency_ms: t0.elapsed().as_millis() as i64,
-        },
+            latency_ms,
+        }
     }
 }
 
@@ -1121,22 +1112,28 @@ async fn test_model_handler(
         let cfg = state.config.read().await;
         let u = payload
             .base_url
+            .filter(|s| !s.trim().is_empty())
             .or_else(|| cfg.model.base_url.clone())
             .or_else(|| sec.openai_base_url.clone());
-        let k = payload.api_key.or_else(|| sec.openai_api_key.clone());
+        let k = payload
+            .api_key
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| sec.openai_api_key.clone());
         let m = payload
             .chat_model
+            .filter(|s| !s.trim().is_empty())
             .or_else(|| cfg.model.model.clone())
             .or_else(|| sec.openai_model.clone());
         let em = payload
             .embed_model
+            .filter(|s| !s.trim().is_empty())
             .or_else(|| cfg.model.embedding_model.clone())
             .or_else(|| sec.openai_embedding_model.clone());
         (u, k, m, em)
     };
 
     let base_url = match base_url {
-        Some(u) if !u.is_empty() => u,
+        Some(u) if !u.trim().is_empty() => u,
         _ => {
             return Json(serde_json::json!({
                 "ok": false,
@@ -1162,4 +1159,102 @@ async fn test_model_handler(
         "latency_ms": result.latency_ms,
     }))
     .into_response()
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct ModelDiscoveryPayload {
+    pub base_url: Option<String>,
+    pub api_key: Option<String>,
+}
+
+async fn discover_models_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<ModelDiscoveryPayload>,
+) -> Response {
+    let (base_url, api_key) = {
+        let sec = state.secrets.read().await;
+        let cfg = state.config.read().await;
+        let u = payload
+            .base_url
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| cfg.model.base_url.clone())
+            .or_else(|| sec.openai_base_url.clone());
+        let k = payload
+            .api_key
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| sec.openai_api_key.clone());
+        (u, k)
+    };
+
+    let base_url = match base_url {
+        Some(u) if !u.trim().is_empty() => u,
+        _ => {
+            return Json(crate::model::ModelDiscoveryResult {
+                ok: false,
+                error: Some("API endpoint URL is required for model discovery".to_string()),
+                models: Vec::new(),
+                chat_models: Vec::new(),
+                embedding_models: Vec::new(),
+            })
+            .into_response();
+        }
+    };
+
+    let result = crate::model::ModelClient::discover_models(
+        &base_url,
+        api_key.as_deref(),
+        std::time::Duration::from_secs(10),
+    )
+    .await;
+
+    Json(result).into_response()
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct ModelDiscoveryQuery {
+    pub base_url: Option<String>,
+    pub api_key: Option<String>,
+}
+
+async fn get_models_handler(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<ModelDiscoveryQuery>,
+) -> Response {
+    let (base_url, api_key) = {
+        let sec = state.secrets.read().await;
+        let cfg = state.config.read().await;
+        let u = query
+            .base_url
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| cfg.model.base_url.clone())
+            .or_else(|| sec.openai_base_url.clone());
+        let k = query
+            .api_key
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| sec.openai_api_key.clone());
+        (u, k)
+    };
+
+    let base_url = match base_url {
+        Some(u) if !u.trim().is_empty() => u,
+        _ => {
+            return Json(crate::model::ModelDiscoveryResult {
+                ok: false,
+                error: Some("API endpoint URL is required for model discovery".to_string()),
+                models: Vec::new(),
+                chat_models: Vec::new(),
+                embedding_models: Vec::new(),
+            })
+            .into_response();
+        }
+    };
+
+    let result = crate::model::ModelClient::discover_models(
+        &base_url,
+        api_key.as_deref(),
+        std::time::Duration::from_secs(10),
+    )
+    .await;
+
+    Json(result).into_response()
 }

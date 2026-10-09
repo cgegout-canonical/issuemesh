@@ -704,6 +704,7 @@ impl Store {
                 let (key, blob) = item?;
                 if blob.len() % 4 == 0 {
                     let mut vec = Vec::with_capacity(blob.len() / 4);
+                    #[allow(clippy::chunks_exact_to_as_chunks)]
                     for chunk in blob.chunks_exact(4) {
                         let arr: [u8; 4] = chunk.try_into().unwrap();
                         vec.push(f32::from_le_bytes(arr));
@@ -760,95 +761,129 @@ impl Store {
 
         self.call(move |conn| {
             // Sanitize query tokens for FTS5: strip punctuation that breaks fts5 syntax
-            let clean_tokens: Vec<String> = q
+            let raw_tokens: Vec<String> = q
                 .split_whitespace()
                 .map(|token| {
-                    let cleaned: String = token.chars().filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-').collect();
-                    if cleaned.is_empty() {
-                        String::new()
-                    } else {
-                        format!("\"{}\"", cleaned)
-                    }
+                    token.chars().filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-').collect::<String>()
                 })
                 .filter(|s| !s.is_empty())
                 .collect();
 
-            if clean_tokens.is_empty() {
+            if raw_tokens.is_empty() {
                 return Ok(Vec::new());
             }
 
-            let fts_query = clean_tokens.join(" ");
+            // Stop words filter: prevent conjunctive FTS5 queries from failing due to common conversational stop words
+            const FTS_STOP_WORDS: &[&str] = &[
+                "a", "an", "the", "and", "or", "of", "in", "on", "at", "to", "for", "from",
+                "with", "by", "about", "is", "are", "was", "were", "be", "been", "being",
+                "what", "which", "who", "whom", "where", "when", "why", "how",
+                "do", "does", "did", "have", "has", "had", "can", "could", "should", "would",
+                "show", "tell", "list", "find", "get", "give", "me", "please", "any", "all", "some",
+                "top", "latest", "recent", "newest", "issue", "issues", "bug", "bugs", "task", "tasks", "pr", "prs",
+            ];
 
-            let mut stmt = conn.prepare(
-                "SELECT f.object_key,
-                        snippet(object_fts, 1, '<b>', '</b>', '...', 16) AS title_snip,
-                        snippet(object_fts, 3, '<b>', '</b>', '...', 32) AS body_snip,
-                        bm25(object_fts) AS rank,
-                        o.title, o.snippet, o.body, o.url, o.container, o.author, o.state,
-                        o.source, o.object_type, o.external_id, o.created_at, o.updated_at, o.native_json
-                 FROM object_fts f
-                 JOIN objects o ON o.object_key = f.object_key
-                 WHERE object_fts MATCH ?1
-                 ORDER BY rank ASC
-                 LIMIT ?2",
-            )?;
-
-            let rows = stmt.query_map(rusqlite::params![&fts_query, limit as i64], |row| {
-                let obj_key: String = row.get(0)?;
-                let title_snip: String = row.get(1)?;
-                let body_snip: String = row.get(2)?;
-                let rank: f64 = row.get(3)?;
-
-                let title: String = row.get(4)?;
-                let snippet: String = row.get(5)?;
-                let body: Option<String> = row.get(6)?;
-                let url: String = row.get(7)?;
-                let container: String = row.get(8)?;
-                let author: String = row.get(9)?;
-                let state: String = row.get(10)?;
-                let source: String = row.get(11)?;
-                let object_type: String = row.get(12)?;
-                let external_id: String = row.get(13)?;
-                let created_at: Option<String> = row.get(14)?;
-                let updated_at: Option<String> = row.get(15)?;
-                let native_str: String = row.get(16)?;
-                let native = serde_json::from_str(&native_str).unwrap_or_default();
-
-                let r#ref = crate::connectors::ObjectRef::from_key(&obj_key)
-                    .unwrap_or_else(|| crate::connectors::ObjectRef::new(source, object_type, external_id));
-
-                let evidence = crate::connectors::Evidence {
-                    r#ref,
-                    title,
-                    snippet,
-                    body,
-                    url,
-                    container,
-                    author,
-                    created_at,
-                    updated_at,
-                    state,
-                    native,
-                };
-
-                let best_snippet = if !body_snip.is_empty() {
-                    body_snip
-                } else if !title_snip.is_empty() {
-                    title_snip
-                } else {
-                    evidence.snippet.clone()
-                };
-
-                Ok(FtsSearchResult {
-                    evidence,
-                    snippet: best_snippet,
-                    rank,
+            let non_stop: Vec<String> = raw_tokens
+                .iter()
+                .filter(|t| {
+                    let lower = t.to_lowercase();
+                    !FTS_STOP_WORDS.contains(&lower.as_str())
+                        && !(t.chars().all(|c| c.is_ascii_digit()) && t.len() < 4)
                 })
-            })?;
+                .cloned()
+                .collect();
 
-            let mut out = Vec::new();
-            for r in rows {
-                out.push(r?);
+            let tokens_to_use = if !non_stop.is_empty() {
+                non_stop
+            } else {
+                raw_tokens
+            };
+
+            let clean_tokens: Vec<String> = tokens_to_use
+                .into_iter()
+                .map(|cleaned| format!("\"{}\"", cleaned))
+                .collect();
+
+            let execute_query = |conn: &rusqlite::Connection, q_str: &str| -> rusqlite::Result<Vec<FtsSearchResult>> {
+                let mut stmt = conn.prepare(
+                    "SELECT f.object_key,
+                            snippet(object_fts, 1, '<b>', '</b>', '...', 16) AS title_snip,
+                            snippet(object_fts, 3, '<b>', '</b>', '...', 32) AS body_snip,
+                            bm25(object_fts, 0.0, 10.0, 5.0, 1.0, 5.0, 2.0) AS rank,
+                            o.title, o.snippet, o.body, o.url, o.container, o.author, o.state,
+                            o.source, o.object_type, o.external_id, o.created_at, o.updated_at, o.native_json
+                     FROM object_fts f
+                     JOIN objects o ON o.object_key = f.object_key
+                     WHERE object_fts MATCH ?1
+                     ORDER BY rank ASC
+                     LIMIT ?2",
+                )?;
+
+                let rows = stmt.query_map(rusqlite::params![q_str, limit as i64], |row| {
+                    let obj_key: String = row.get(0)?;
+                    let title_snip: String = row.get(1)?;
+                    let body_snip: String = row.get(2)?;
+                    let rank: f64 = row.get(3)?;
+
+                    let title: String = row.get(4)?;
+                    let snippet: String = row.get(5)?;
+                    let body: Option<String> = row.get(6)?;
+                    let url: String = row.get(7)?;
+                    let container: String = row.get(8)?;
+                    let author: String = row.get(9)?;
+                    let state: String = row.get(10)?;
+                    let source: String = row.get(11)?;
+                    let object_type: String = row.get(12)?;
+                    let external_id: String = row.get(13)?;
+                    let created_at: Option<String> = row.get(14)?;
+                    let updated_at: Option<String> = row.get(15)?;
+                    let native_str: String = row.get(16)?;
+                    let native = serde_json::from_str(&native_str).unwrap_or_default();
+
+                    let r#ref = crate::connectors::ObjectRef::from_key(&obj_key)
+                        .unwrap_or_else(|| crate::connectors::ObjectRef::new(source, object_type, external_id));
+
+                    let evidence = crate::connectors::Evidence {
+                        r#ref,
+                        title,
+                        snippet,
+                        body,
+                        url,
+                        container,
+                        author,
+                        created_at,
+                        updated_at,
+                        state,
+                        native,
+                    };
+
+                    let best_snippet = if !body_snip.is_empty() {
+                        body_snip
+                    } else if !title_snip.is_empty() {
+                        title_snip
+                    } else {
+                        evidence.snippet.clone()
+                    };
+
+                    Ok(FtsSearchResult {
+                        evidence,
+                        snippet: best_snippet,
+                        rank,
+                    })
+                })?;
+
+                let mut out = Vec::new();
+                for r in rows {
+                    out.push(r?);
+                }
+                Ok(out)
+            };
+
+            let fts_query = clean_tokens.join(" ");
+            let mut out = execute_query(conn, &fts_query)?;
+            if out.is_empty() && clean_tokens.len() > 1 {
+                let or_query = clean_tokens.join(" OR ");
+                out = execute_query(conn, &or_query)?;
             }
             Ok(out)
         })

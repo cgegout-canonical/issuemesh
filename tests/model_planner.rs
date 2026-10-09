@@ -168,3 +168,41 @@ async fn test_model_embeddings_client() {
     assert_eq!(embeddings[0].len(), 3);
     assert_eq!(embeddings[1].len(), 3);
 }
+
+#[tokio::test]
+async fn test_natural_language_query_cleaning_and_planning() {
+    use issuemesh::model::planner::clean_natural_language_query;
+
+    let (q, limit, proj) = clean_natural_language_query("what are the top 3 issues of Sunbeam?");
+    assert_eq!(q, "Sunbeam");
+    assert_eq!(limit, Some(3));
+    assert_eq!(proj, Some("Sunbeam".to_string()));
+
+    let (q2, limit2, proj2) = clean_natural_language_query("show me the latest 5 bugs in Nova");
+    assert_eq!(q2, "Nova");
+    assert_eq!(limit2, Some(5));
+    assert_eq!(proj2, Some("Nova".to_string()));
+
+    // Deterministic plan end-to-end
+    let plan = QueryPlanner::plan("what are the top 3 issues of Sunbeam?", None).await;
+    assert_eq!(plan.query, "Sunbeam");
+    assert_eq!(plan.projects, vec!["Sunbeam".to_string()]);
+    assert_eq!(plan.max_remote_results, 10);
+}
+
+#[tokio::test]
+async fn test_model_client_openrouter_normalization() {
+    let client = ModelClient::new(
+        "https://openrouter.ai/api/v1",
+        Some("test-key".to_string()),
+        "gpt-sol-latest",
+        "gpt-sol-latest",
+        Duration::from_secs(5),
+    )
+    .unwrap();
+
+    // Verify it builds and the internal model is mapped properly
+    // Client can format requests without 404 on OpenRouter
+    assert!(format!("{:?}", client).contains("openai/gpt-4o-mini"));
+    assert!(format!("{:?}", client).contains("openai/text-embedding-3-small"));
+}

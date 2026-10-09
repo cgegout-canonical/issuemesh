@@ -177,15 +177,21 @@
                 <input type="password" id="model-api-key" placeholder="sk-••••••••">
             </div>
             <div class="form-group">
-                <label for="model-chat">Chat / Reasoning Model Name</label>
-                <input type="text" id="model-chat" placeholder="gpt-4o">
+                <label for="model-chat">Chat / Reasoning Model</label>
+                <select id="model-chat" style="width: 100%; padding: 0.6rem 0.8rem; border: 1px solid var(--color-border-grey); font-family: inherit; font-size: 0.95rem; border-radius: 2px;">
+                </select>
+                <div id="model-chat-hint" class="form-hint">Discovered compatible models will appear here automatically.</div>
             </div>
             <div class="form-group">
-                <label for="model-embed">Embedding Model Name (optional)</label>
-                <input type="text" id="model-embed" placeholder="text-embedding-3-small">
+                <label for="model-embed">Embedding Model (optional)</label>
+                <select id="model-embed" style="width: 100%; padding: 0.6rem 0.8rem; border: 1px solid var(--color-border-grey); font-family: inherit; font-size: 0.95rem; border-radius: 2px;">
+                </select>
+                <div id="model-embed-hint" class="form-hint">Discovered compatible embedding models will appear here.</div>
             </div>
+            <div id="model-discovery-status" class="probe-result" style="display: none; margin-bottom: 1rem;"></div>
             <button class="btn btn-secondary" onclick="testModel()">Test model</button>
             <div id="model-probe" class="probe-result"></div>
+
             <div class="btn-row">
                 <button class="btn btn-secondary" onclick="goToStep(4)">&larr; Back</button>
                 <button class="btn btn-primary" onclick="goToStep(6)">Continue &rarr;</button>

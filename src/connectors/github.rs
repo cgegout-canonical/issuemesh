@@ -20,7 +20,7 @@ impl GitHubConnector {
             base_url,
             token,
             &["/graphql"],
-            "issuemesh/0.1.0 (read-only)",
+            concat!("issuemesh/", env!("CARGO_PKG_VERSION"), " (read-only)"),
             4,
             0,
         )?;

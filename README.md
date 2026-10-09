@@ -1,168 +1,358 @@
 # IssueMesh
 
-IssueMesh is a local-first, memory-augmented federated search engine and investigation workbench for engineering issues across multiple trackers: **GitHub**, **Jira**, and **Launchpad**.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-1.80%2B-orange.svg)](https://www.rust-lang.org)
+[![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macos-lightgrey.svg)]()
+[![Snap](https://img.shields.io/badge/snap-strict%20confinement-green.svg)](SNAP_PACKAGING.md)
 
-IssueMesh builds a local, queryable graph of cross-linked bugs, pull requests, tasks, revisions, and discussions with semantic search, full-text search (SQLite FTS5), graph traversal, consistency analysis, and deterministic evidence synthesis.
-
----
-
-## Key Highlights
-
-- **Local First & Memory-Augmented**: Stores fetched issues, comments, relations, and embeddings in a local SQLite database (`issuemesh.db`) with zero external database dependencies.
-- **Strictly Read-Only Guarantee**: Architecturally enforced HTTP client contract. Tracker APIs are accessed exclusively via read-only endpoints (`GET`, HEAD, and strictly allowlisted search `POST` bodies). Tracker writes (`PUT`, `PATCH`, `DELETE`) are impossible by construction.
-- **Zero-Secret Leakage**: Tokens and credentials stored in permissions-hardened `secrets.env` (`0600` on POSIX). Secrets are never logged, never embedded into the SQLite database, and returned as masked strings (`••••1234`) in the web UI and API.
-- **Self-Contained Single Binary**: Embedded HTML/CSS/JS frontend (`rust-embed`), embedded SQLite migrations, and pure Rust TLS (`rustls`), producing an ultra-compact ~6 MB binary with no Node.js or Python runtime requirements.
-- **Deep Graph Traversal**: Automatically discovers and expands issue references across tracker boundaries (`LP#123456`, `PROJ-789`, `#456`, URLs).
-- **Graceful Degradation**: Operates seamlessly even when trackers are unreachable or when LLM/embedding inference endpoints are offline (falls back to lexical FTS and BM25 graph scoring).
+**IssueMesh** is a local-first, memory-augmented federated search engine and engineering intelligence workbench. It bridges information silos across **GitHub**, **Jira**, and **Launchpad**, constructing an interconnected cross-system graph of issues, pull requests, bugs, revisions, and discussions with deterministic, evidence-based synthesis.
 
 ---
 
-## Architecture Overview
+## Table of Contents
 
+1. [Motivation & Purpose](#1-motivation--purpose)
+2. [Key Capabilities](#2-key-capabilities)
+3. [Architecture Overview](#3-architecture-overview)
+4. [How Search & Deep Search Works](#4-how-search--deep-search-works)
+5. [Build & Installation Instructions](#5-build--installation-instructions)
+6. [First-Run Setup & Onboarding](#6-first-run-setup--onboarding)
+7. [OpenAI-Compatible Model Discovery](#7-openai-compatible-model-discovery)
+8. [Configuration & Datastore Paths](#8-configuration--datastore-paths)
+9. [Security & Read-Only Guarantees](#9-security--read-only-guarantees)
+10. [Memory, Sources & Health Pages](#10-memory-sources--health-pages)
+11. [Testing & 30-Test Validation Framework](#11-testing--30-test-validation-framework)
+12. [Portability & Snap Readiness](#12-portability--snap-readiness)
+13. [Known Limitations](#13-known-limitations)
+14. [Developer Instructions](#14-developer-instructions)
+15. [License](#15-license)
+
+---
+
+## 1. Motivation & Purpose
+
+Engineering organizations frequently distribute work across fragmented tracking systems:
+- **Jira** for feature planning, customer commitments, and organizational epics.
+- **GitHub** for active pull requests, code reviews, and developer discussions.
+- **Launchpad** for Ubuntu and upstream bug tracking, package releases, and security patches.
+
+Navigating complex technical initiatives often requires correlating tickets across these platforms manually. Key questions—such as *"Has the feature planned in Jira landed in code?"* or *"Why is this bug marked Fix Released if the pull request is still open?"*—fall into tracking gaps.
+
+**IssueMesh solves this by:**
+- Unifying searches across GitHub, Jira, and Launchpad simultaneously.
+- Traversing explicit and inferred relationships (`implements`, `fixes`, `blocks`, `relates_to`).
+- Flagging cross-tracker status contradictions (e.g., Jira `Done` while GitHub PR is still `Open`).
+- Providing concise, strictly evidence-backed answers (≤ 250 words) with zero hallucination.
+- Retaining all query memory locally in SQLite with full-text search (FTS5) and vector embeddings.
+
+---
+
+## 2. Key Capabilities
+
+- **Federated Multi-Tracker Retrieval**: Concurrently queries GitHub, Jira, and Launchpad APIs alongside local cached memory.
+- **Strict Read-Only Enforcement**: Guaranteed by architecture and compile-time barriers; IssueMesh cannot modify or delete remote tracker records.
+- **Deterministic Evidence Synthesis**: Constrained LLM analysis engine strictly forbidden from inventing objects, statuses, or relationships. If evidence is insufficient, it explicitly reports that limitation.
+- **Automated Relationship Extraction**: Identifies cross-references from commit messages, issue descriptions, and comments (`LP#123456`, `PROJ-789`, `org/repo#123`, URLs).
+- **Cross-System Consistency Engine**: Detects workflow anomalies, such as tickets closed ahead of their code implementations or divergent milestone assignments.
+- **Dynamic Model Discovery**: Queries OpenAI-compatible endpoints (`/v1/models`) on credentials entry, dynamically populating normalized model dropdowns without hardcoding.
+- **Local-First & Privacy Preserving**: Zero external telemetry; tokens stored in `0600`-hardened files; all data stored in local SQLite databases.
+- **Zero-Dependency Single Binary**: Bundles embedded web UI, embedded SQLite migrations, and pure-Rust TLS (`rustls`).
+
+---
+
+## 3. Architecture Overview
+
+IssueMesh follows a layered, modular architecture written in asynchronous Rust (`tokio`):
+
+```text
+                           ┌──────────────────────────┐
+                           │   Web UI / REST API      │
+                           │   (Axum + Rust-Embed)    │
+                           └────────────┬─────────────┘
+                                        │
+                                        ▼
+                           ┌──────────────────────────┐
+                           │   Search Orchestrator    │
+                           │   & Query Intent Planner │
+                           └──────┬────────────┬──────┘
+                                  │            │
+             ┌────────────────────┘            └────────────────────┐
+             ▼                                                      ▼
+  ┌─────────────────────┐                                ┌─────────────────────┐
+  │  Federated Trackers │                                │   Local Datastore   │
+  │  (GitHub, Jira, LP) │                                │   (SQLite + FTS5    │
+  │  [Strict Read-Only] │                                │    + Embeddings)    │
+  └──────────┬──────────┘                                └──────────┬──────────┘
+             │                                                      │
+             └────────────────────┐            ┌────────────────────┘
+                                  ▼            ▼
+                           ┌──────────────────────────┐
+                           │  Graph Traversal Engine  │
+                           │ (Relation Deduplication) │
+                           └────────────┬─────────────┘
+                                        │
+                                        ▼
+                           ┌──────────────────────────┐
+                           │  Hybrid Evidence Ranker  │
+                           │  & Consistency Analyzer  │
+                           └────────────┬─────────────┘
+                                        │
+                                        ▼
+                           ┌──────────────────────────┐
+                           │  Deterministic Synthesis │
+                           │   Engine (< 250 words)   │
+                           └──────────────────────────┘
 ```
-                          ┌──────────────────────────┐
-                          │   Web UI / REST API      │
-                          │   (Axum + Rust-Embed)    │
-                          └────────────┬─────────────┘
-                                       │
-                                       ▼
-                          ┌──────────────────────────┐
-                          │   Search Orchestration   │
-                          │   & Query Intent Parser  │
-                          └──────┬────────────┬──────┘
-                                 │            │
-            ┌────────────────────┘            └────────────────────┐
-            ▼                                                      ▼
- ┌─────────────────────┐                                ┌─────────────────────┐
- │  Federated Trackers │                                │   Local Memory      │
- │  (GitHub, Jira, LP) │                                │   (SQLite + FTS5    │
- │  [Strict Read-Only] │                                │    + Embeddings)    │
- └──────────┬──────────┘                                └──────────┬──────────┘
-            │                                                      │
-            └────────────────────┐            ┌────────────────────┘
-                                 ▼            ▼
-                          ┌──────────────────────────┐
-                          │   Graph Expander Engine  │
-                          │ (Links, Relations, Dedupe│
-                          └────────────┬─────────────┘
-                                       │
-                                       ▼
-                          ┌──────────────────────────┐
-                          │ Evidence Ranker & L1/L2  │
-                          │ Consistency / Synthesis  │
-                          └──────────────────────────┘
+
+### Core Modules
+
+- **`src/web.rs`**: Axum HTTP router, Server-Sent Events (SSE) streaming, static asset serving, and REST endpoints.
+- **`src/search/orchestrator.rs`**: Coordinates federated query execution, graph expansion, consistency checking, and model synthesis.
+- **`src/search/ranking.rs`**: Hybrid ranking engine combining lexical (FTS5 BM25), semantic vector similarity, graph proximity, and freshness decay.
+- **`src/search/consistency.rs`**: Rules-based cross-tracker conflict detection (`jira_done_pr_open`, `jira_done_lp_incomplete`, etc.).
+- **`src/connectors/`**: Protocol-specific read-only connectors for `github.rs`, `jira.rs`, and `launchpad.rs`, backed by `http.rs`.
+- **`src/store.rs`**: Asynchronous SQLite abstraction managing objects, relations, revisions, unresolved references, FTS5 virtual tables, and audit logs.
+- **`src/model/`**: OpenAI-compatible client, dynamic model discovery, search planner, and synthesis engine.
+
+---
+
+## 4. How Search & Deep Search Works
+
+Every search executed in IssueMesh goes through a rigorous seven-stage pipeline:
+
+```text
+1. Intent Planning ──► 2. Federated Fetch ──► 3. Graph Expansion ──► 4. Consistency Analysis
+                                                                             │
+5. Synthesis Answer ◄── 6. Context Truncation ◄── 5. Hybrid Ranking ◄────────┘
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for deep-dive technical specifications on the connector boundaries, graph expansion, scoring pipelines, and safety models.
+1. **Intent Planning**: A fast planning model analyzes the user query to determine target sources, project codes, repository hints, and semantic search variations.
+2. **Federated Retrieval**: Concurrently queries enabled remote trackers (GitHub REST API, Jira REST API, Launchpad API) and the local SQLite database.
+3. **Graph Expansion**: Discovered references (`LP#...`, `PROJ-...`, `#PR`) are parsed and traversed up to the configured `graph_depth` (default: 2 hops). Cyclic loops are automatically broken, and traversed nodes are deduplicated.
+4. **Cross-System Consistency Checking**: Analyzes pairs of linked objects across trackers to identify workflow disconnects (e.g., Jira issue marked `Done` while linked GitHub PR is still `Open`).
+5. **Hybrid Ranking**: Ranks all candidate objects using the hybrid scoring formula:
+   $$\text{Score} = 0.35 \times \text{Lexical} + 0.35 \times \text{Semantic} + 0.20 \times \text{Graph} + 0.10 \times \text{Freshness}$$
+   - **Lexical Score**: SQLite FTS5 BM25 match quality.
+   - **Semantic Score**: Cosine similarity between query and object embeddings.
+   - **Graph Score**: Proximity decay based on traversal hop distance ($1.0$ for direct hits, $0.8$ for 1-hop, $0.5$ for 2-hop).
+   - **Freshness Score**: Exponential decay with a 30-day half-life: $2^{-\Delta \text{days} / 30}$.
+6. **Context Management & Truncation**: Truncates excessive discussion threads and limits deep reads to prevent LLM context exhaustion.
+7. **Deterministic Synthesis**: Generates a strictly evidence-based response (under 250 words). If evidence is ambiguous, contradictory, or insufficient, it states the exact gap rather than inventing facts.
 
 ---
 
-## Prerequisites
+## 5. Build & Installation Instructions
 
-- **Linux** (x86_64 or aarch64), **macOS**, or modern POSIX environment.
-- **Rust Toolchain**: Rust 1.80+ (`cargo`, `rustc`).
-- Standard C compiler and runtime (`gcc` / `glibc` / `musl`) for SQLite compilation.
+### Prerequisites
 
----
+- **Linux** (x86_64 or aarch64) or **macOS**.
+- **Rust Toolchain**: Rust 1.80 or newer (`cargo`, `rustc`).
+- Standard C compiler and runtime (`gcc` or `clang`) for compiling bundled SQLite.
 
-## Build & Run
-
-### Quick Start (Development)
+### Quick Start (Build from Source)
 
 ```bash
-# Build binary
-cargo build
+# Clone repository
+git clone https://github.com/gegout/issuemesh.git
+cd issuemesh
 
-# Run test suite
-cargo test
-
-# Run application
-cargo run
-```
-
-### Production Release Build
-
-```bash
-# Compile optimized release binary
-cargo build --release
+# Build release binary
+CFLAGS="-fno-sanitize=undefined -fwrapv" cargo build --release
 
 # Run standalone executable
 ./target/release/issuemesh
 ```
 
-The web interface will be accessible at:
-```
+The web interface will be available at:
+```text
 http://127.0.0.1:8765
+```
+
+### Installation
+
+To install `issuemesh` into your user binary path:
+
+```bash
+cargo install --path .
 ```
 
 ---
 
-## First-Run Setup & Onboarding
+## 6. First-Run Setup & Onboarding
 
 When starting IssueMesh for the first time without configured trackers:
-1. IssueMesh detects missing configuration and displays an interactive terminal notice with the setup URL.
-2. Opening `http://127.0.0.1:8765` automatically redirects to `/setup`.
-3. The onboarding wizard allows configuring:
+1. IssueMesh detects missing configuration and prints the setup URL to the terminal.
+2. Navigating to `http://127.0.0.1:8765` automatically redirects to `/setup`.
+3. The wizard allows configuring:
    - **GitHub**: Personal Access Token (classic `repo` or fine-grained read-only).
    - **Jira**: Base URL, User Email, and API Token.
    - **Launchpad**: Enable/disable public Launchpad API access.
-   - **Local / OpenAI LLM**: Endpoint URL, API key, and model for synthesis.
-   - **Embedding Engine**: Optional embedding endpoint and model for vector similarity.
+   - **OpenAI-Compatible LLM**: Endpoint URL, API key, and model for query planning and synthesis.
+   - **Embedding Engine**: Optional embedding endpoint and model for semantic vector search.
 4. Each tracker includes a **Test Connection** button validating credentials in real time.
 5. All secrets are securely written to `secrets.env` with `0600` permissions.
 
 ---
 
-## Data Paths & Storage
+## 7. OpenAI-Compatible Model Discovery
 
-IssueMesh respects the standard XDG base directory specification:
+IssueMesh dynamically queries the configured AI provider's `/v1/models` endpoint as soon as an API URL and key are provided:
 
-| File / Directory | Location | Purpose |
-|---|---|---|
-| **Data Directory** | `~/.local/share/issuemesh/` | SQLite database (`issuemesh.db`), search run caches, and query logs. |
-| **Config Directory** | `~/.config/issuemesh/` | `config.toml` (tracker settings, search budgets, thresholds). |
-| **Secrets File** | `~/.config/issuemesh/secrets.env` | Credentials with strict `0600` file permissions. |
-
-Custom paths can be specified via environment variables:
-- `ISSUEMESH_DATA_DIR=/custom/data/path`
-- `ISSUEMESH_CONFIG_DIR=/custom/config/path`
-- `ISSUEMESH_PORT=8765`
-- `ISSUEMESH_HOST=127.0.0.1`
+- **Universal Provider Support**: Supports OpenAI, OpenRouter, Ollama, LM Studio, vLLM, and LocalAI.
+- **Resilient Normalization**: Automatically extracts model IDs across differing response structures (`data[].id`, `models[].name`, flat string lists).
+- **Dynamic Dropdown**: Populates the Model field with available models, eliminating manual typing.
+- **Real-Time Refresh**: Refreshes model options whenever the endpoint URL or API key is updated.
+- **Fail-Safe Operation**: If the endpoint is unreachable or authentication fails, an error banner is displayed, the dropdown remains empty, and the application never silently falls back to hardcoded models.
+- **Embedding Model Discovery**: Filters and detects embedding models when supported by the provider.
 
 ---
 
-## Verification & Testing
+## 8. Configuration & Datastore Paths
 
-IssueMesh includes comprehensive test suites across unit, integration, and live end-to-end scenarios:
+IssueMesh strictly adheres to the XDG Base Directory specification:
+
+| File / Directory | Default Location | Description |
+|---|---|---|
+| **Data Directory** | `~/.local/share/issuemesh/` (or `~/.issuemesh/`) | SQLite database (`issuemesh.db`), search logs, and FTS tables. |
+| **Config File** | `~/.config/issuemesh/config.toml` | Tracker settings, search limits, weights, and models. |
+| **Secrets File** | `~/.config/issuemesh/secrets.env` | API keys and tokens with strict `0600` POSIX permissions. |
+
+### Environment Overrides
+
+- `ISSUEMESH_HOME`: Base directory for both config and data (defaults to `~/.issuemesh`).
+- `ISSUEMESH_DATA_DIR`: Override path for `issuemesh.db`.
+- `ISSUEMESH_CONFIG_DIR`: Override path for `config.toml` and `secrets.env`.
+- `ISSUEMESH_PORT`: HTTP listening port (default: `8765`).
+- `ISSUEMESH_HOST`: HTTP listening address (default: `127.0.0.1`).
+
+---
+
+## 9. Security & Read-Only Guarantees
+
+IssueMesh is designed for secure deployment in sensitive corporate engineering environments:
+
+- **Architectural Read-Only Contract**: The HTTP connector (`src/connectors/http.rs`) strictly rejects unsafe HTTP methods (`PUT`, `PATCH`, `DELETE`). Only `GET` and allowlisted search `POST` endpoints are permitted.
+- **Static Verification**: Continuous integration checks enforce that no write methods exist in connector code:
+  ```bash
+  ! grep -rn "\.put(\|\.patch(\|\.delete(\|Method::PUT\|Method::PATCH\|Method::DELETE" src/
+  ```
+- **Zero Secret Leakage**:
+  - API keys and tokens are stored in `secrets.env` with `0600` permissions.
+  - Secrets are never written to the SQLite database.
+  - Web UI and REST API return all tokens masked (e.g., `••••abcd`).
+  - Connector error messages redact credentials, preventing token leakage in logs.
+- **Auditing**: Every external HTTP request is logged in the local `api_audit` table with timestamp, endpoint, status code, and latency.
+
+---
+
+## 10. Memory, Sources & Health Pages
+
+IssueMesh provides four dedicated views in its embedded web frontend:
+
+1. **Workbench (`/`)**: Main investigation interface. Live query input, SSE streaming search progression, ranked evidence cards, interactive relationship graph, consistency alerts, and synthesized answer.
+2. **Memory (`/memory`)**: Local memory management. Displays cached object counts by tracker, FTS5 index size, stored revisions, and unresolved reference queues. Includes cache clear controls.
+3. **Sources (`/sources`)**: Tracker status overview. Shows connection health, authentication state, base URLs, and active project/organization filters.
+4. **Health (`/health`)**: Diagnostic dashboard. Real-time API latency measurements, HTTP error rates, recent API audit logs, and system resource metrics.
+
+---
+
+## 11. Testing & 30-Test Validation Framework
+
+IssueMesh is verified using a rigorous **30-Test Validation Framework** evaluated across five dimensions:
+
+### Evaluation Dimensions
+
+| Dimension | Weight | Scoring Description |
+|---|---|---|
+| **Accuracy** | 35% | Factual correctness supported by tracker evidence. Zero hallucinations allowed. |
+| **Relevance** | 25% | Directly answers the user's exact query without irrelevant search dumps. |
+| **Coverage** | 15% | Retrieves all necessary objects across relevant trackers. |
+| **Traceability** | 15% | All claims reference real object keys (`OPEN-4679`, `LP#...`, `org/repo#...`). |
+| **Conciseness** | 10% | Clear, readable, and strictly **less than 250 words**. |
+
+### Scoring & Release Gates
+
+$$\text{Weighted Score} = 0.35 \times \text{Acc} + 0.25 \times \text{Rel} + 0.15 \times \text{Cov} + 0.15 \times \text{Tra} + 0.10 \times \text{Con}$$
+
+- **PASS**: Weighted score $\ge 4.0/5$ with no dimension $< 3$.
+- **WEAK**: Weighted score $\ge 3.0/5$ and $< 4.0/5$.
+- **FAIL**: Weighted score $< 3.0/5$ or any hard failure.
+- **Hard Failure**: Any hallucinated ticket ID, invented status, or wrong relationship triggers `Accuracy = 0` and immediate `FAIL`.
+
+```text
+Release Gates:
+- PASS >= 28 / 30 tests
+- FAIL = 0
+- Average Weighted Score >= 4.30 / 5
+- Average Accuracy >= 4.50 / 5
+- Average Relevance >= 4.50 / 5
+- Average Traceability >= 4.00 / 5
+- Hallucinations = 0
+```
+
+### The 10 Corner-Case Tests (21–30)
+
+21. **Cyclic Relations**: Graph loop detection, node deduplication, and bounded traversal.
+22. **Stale Cache**: Newer remote tracker state overrides local cache and preserves revisions history.
+23. **Tracker Unavailable**: Search continues on available sources, reports limitation, and does not invent evidence.
+24. **Invalid Credentials**: Clear 401 error, zero secret leakage, healthy sources continue unaffected.
+25. **Ambiguous Query**: Exposes ambiguity and lists candidate issues rather than guessing.
+26. **Misleading Lexical Matches**: Rejects superficial keyword overlap; reports insufficient evidence for absent concepts.
+27. **Very Large Thread**: Bounded context management, prioritization of latest decisions, and answer under 250 words.
+28. **Conflicting Source States**: Preserves cross-tracker contradictions without fabricating a unified status.
+29. **Missing/Private Referenced Object**: Records unresolved references gracefully without panics or fabricated content.
+30. **Duplicate Evidence**: Multiple links to the same PR resolve to a canonical key without score inflation.
+
+---
+
+## 12. Portability & Snap Readiness
+
+IssueMesh is built for strict confinement under Canonical Snap (`core24`):
+
+- **Pure Rust TLS**: Uses `rustls` with `webpki-roots`, removing runtime dependencies on OpenSSL or host certificate stores.
+- **Bundled SQLite**: Embeds SQLite directly into the binary with bundled FTS5.
+- **Relocatable Storage**: Automatically respects `$SNAP_USER_COMMON` and `$SNAP_USER_DATA`.
+- **Minimal Plugs**: Requires only `network` and `network-bind`.
+- See [SNAP_PACKAGING.md](SNAP_PACKAGING.md) for complete snapcraft configuration and packaging instructions.
+
+---
+
+## 13. Known Limitations
+
+- **Rate Limits**: Anonymous Launchpad access is subject to public IP rate limits. Configuring authentication removes these limits.
+- **Private Tracker Access**: Requires network connectivity to internal Jira instances (e.g., via VPN).
+- **LLM Context Window**: Extremely large comment threads (> 100 comments) are truncated to the most recent comments and decisions to fit context limits.
+
+---
+
+## 14. Developer Instructions
+
+### Development Workflow
 
 ```bash
-# Run all format and lint checks
+# Check formatting
 cargo fmt --check
+
+# Run Clippy lints
 cargo clippy --all-targets --all-features -- -D warnings
 
 # Run all unit and integration tests
-cargo test
+CFLAGS="-fno-sanitize=undefined -fwrapv" cargo test
 
-# Run the complete automated verification pipeline (including live E2E)
+# Run corner-case suite (Tests 21-30)
+CFLAGS="-fno-sanitize=undefined -fwrapv" cargo test --test corner_cases
+
+# Run verification pipeline
 ./scripts/verify.sh
-```
 
-### Verification Pipeline (`verify.sh`)
-The automated verification script executes:
-1. `cargo fmt --check`
-2. `cargo clippy --all-targets --all-features -- -D warnings`
-3. `cargo test`
-4. Static grep scan for forbidden write HTTP methods (`PUT`, `PATCH`, `DELETE`) on trackers.
-5. Static scan ensuring zero `todo!()` or `unimplemented!()` placeholders.
-6. `cargo build --release`
-7. Live server E2E test suite running on an isolated test port with zero external leaks.
+# Run full 30-test benchmark suite
+CFLAGS="-fno-sanitize=undefined -fwrapv" cargo run --example run_benchmark -- all
+```
 
 ---
 
-## Snap Strict Confinement Packaging
+## 15. License
 
-IssueMesh is designed from day one for seamless packaging under Canonical Snap strict confinement (`core24`):
-- Relocatable data/config paths via `$SNAP_USER_COMMON` and `$SNAP_USER_DATA`.
-- Pure Rust TLS (`rustls` with `webpki-roots`), removing system OpenSSL/crypto shared library dependencies.
-- Static SQLite bundling (`rusqlite` bundled), eliminating external database daemon requirements.
-- Required snap interfaces: `network`, `network-bind`.
+This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
+
+Copyright (c) 2026 IssueMesh contributors.

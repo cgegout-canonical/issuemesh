@@ -60,6 +60,20 @@ async fn test_fts_search_and_ranking() {
     // Search with no results
     let none = store.search_fts("nonexistentkeywordxyz", 10).await.unwrap();
     assert!(none.is_empty());
+
+    // Search with conversational query and stop-words: "what are the top 3 issues of Sunbeam?"
+    let conv_results = store
+        .search_fts("what are the top 3 issues of Sunbeam?", 10)
+        .await
+        .unwrap();
+    assert_eq!(conv_results.len(), 2);
+    let conv_keys: Vec<String> = conv_results
+        .iter()
+        .map(|r| r.evidence.r#ref.to_key())
+        .collect();
+    // doc1 has Sunbeam in title (weight 10.0), doc3 in container (weight 5.0)
+    assert_eq!(conv_keys[0], "jira:issue:OPEN-100");
+    assert_eq!(conv_keys[1], "github:issue:canonical/sunbeam#45");
 }
 
 #[tokio::test]

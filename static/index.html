@@ -30,15 +30,26 @@
             <h1>Search GitHub &middot; Jira &middot; Launchpad</h1>
             <p>Evidence-driven engineering intelligence across your trackers</p>
             <form id="search-form" class="search-box" onsubmit="event.preventDefault(); runSearch();">
-                <input type="text" id="query-input" class="search-input" placeholder="e.g. Why is BGP blocking multi-site OpenStack? or OPEN-4679..." autofocus>
+                <div class="search-input-wrapper">
+                    <input type="text" id="query-input" class="search-input" placeholder="e.g. Why is BGP blocking multi-site OpenStack? or OPEN-4679..." autofocus>
+                    <div id="search-progress-bar" class="search-progress-bar" aria-hidden="true">
+                        <div class="search-progress-bar-fill"></div>
+                    </div>
+                </div>
                 <button type="submit" class="btn btn-primary" id="search-btn">Search</button>
             </form>
         </section>
 
-        <section id="search-progress" style="display: none; max-width: 800px; margin: 0 auto 2rem auto;">
-            <div class="card">
-                <div class="card-title">Search Progress</div>
-                <div id="progress-log" style="font-family: var(--font-mono); font-size: 0.9rem; line-height: 1.8;"></div>
+        <section id="search-progress" style="display: none; max-width: 800px; margin: 1.5rem auto 2rem auto;">
+            <div class="card search-progress-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                    <div class="card-title" style="margin: 0; font-size: 1rem; color: var(--color-muted-text); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Search Progress</div>
+                    <span id="search-progress-status" class="status-badge" style="color: var(--color-orange); font-size: 0.85rem;">
+                        <span class="dot dot-searching"></span> Live
+                    </span>
+                </div>
+                <textarea id="progress-textbox" class="search-progress-textbox" rows="4" readonly placeholder="Waiting for search events..."></textarea>
+                <div id="progress-log" style="display: none;"></div>
             </div>
         </section>
 

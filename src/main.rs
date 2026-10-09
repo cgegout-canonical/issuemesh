@@ -73,7 +73,7 @@ async fn main() -> Result<()> {
         search_results: Arc::new(RwLock::new(std::collections::HashMap::new())),
     };
 
-    println!("IssueMesh 0.1.0");
+    println!("IssueMesh {}", env!("CARGO_PKG_VERSION"));
     println!();
     if !config.onboarding_completed {
         println!("First-time setup required.");

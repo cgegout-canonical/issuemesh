@@ -108,10 +108,18 @@ nav a.active {
     gap: 0.5rem;
     max-width: 800px;
     margin: 0 auto;
+    align-items: flex-start;
+}
+
+.search-input-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    position: relative;
 }
 
 .search-input {
-    flex: 1;
+    width: 100%;
     font-family: var(--font-stack);
     font-size: 1.125rem;
     padding: 0.85rem 1.25rem;
@@ -119,10 +127,56 @@ nav a.active {
     border-radius: 2px;
     outline: none;
     transition: border-color 0.15s;
+    box-sizing: border-box;
 }
 
 .search-input:focus {
     border-color: var(--color-orange);
+}
+
+/* Canonical Orange Gradient Progress Bar (Left-to-Right Running) */
+.search-progress-bar {
+    width: 100%;
+    height: 4px;
+    background-color: #F0E8ED;
+    border-radius: 2px;
+    overflow: hidden;
+    position: relative;
+    margin-top: 4px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+.search-progress-bar.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+.search-progress-bar-fill {
+    position: absolute;
+    top: 0;
+    left: -40%;
+    bottom: 0;
+    width: 40%;
+    background: linear-gradient(90deg, #772953 0%, #E95420 50%, #FF7844 100%);
+    border-radius: 2px;
+    animation: canonical-bar-run 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes canonical-bar-run {
+    0% {
+        left: -40%;
+        width: 30%;
+    }
+    50% {
+        left: 30%;
+        width: 50%;
+    }
+    100% {
+        left: 100%;
+        width: 30%;
+    }
 }
 
 .btn {
@@ -205,4 +259,123 @@ nav a.active {
 
 pre, code {
     font-family: var(--font-mono);
+}
+
+.dot-searching {
+    background-color: var(--color-orange);
+    animation: dot-pulse 1.2s infinite ease-in-out;
+}
+
+@keyframes dot-pulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.3;
+        transform: scale(0.8);
+    }
+}
+
+/* 4-lines real-time search progress textbox */
+.search-progress-card {
+    padding: 1rem 1.25rem;
+}
+
+.search-progress-textbox {
+    width: 100%;
+    height: calc(4 * 1.5em + 1.2rem);
+    min-height: calc(4 * 1.5em + 1.2rem);
+    max-height: calc(4 * 1.5em + 1.2rem);
+    padding: 0.6rem 0.85rem;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    line-height: 1.5em;
+    color: var(--color-dark-text);
+    background-color: var(--color-warm-grey);
+    border: 1px solid var(--color-border-grey);
+    border-left: 3px solid var(--color-orange);
+    border-radius: 2px;
+    resize: none;
+    outline: none;
+    box-sizing: border-box;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.search-progress-textbox:focus {
+    border-color: var(--color-orange);
+}
+
+/* Summary Textbox (<250 words) at end of search */
+.summary-card {
+    background-color: var(--color-white);
+    border: 1px solid var(--color-border-grey);
+    border-left: 4px solid var(--color-orange);
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.summary-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.summary-title-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.summary-title {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: var(--color-dark-text);
+    margin: 0;
+}
+
+.summary-word-badge {
+    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--color-muted-text);
+    background: var(--color-warm-grey);
+    border: 1px solid var(--color-border-grey);
+    padding: 0.15rem 0.5rem;
+    border-radius: 2px;
+}
+
+.summary-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.summary-textbox {
+    width: 100%;
+    min-height: 120px;
+    padding: 0.85rem 1rem;
+    font-family: var(--font-stack);
+    font-size: 1rem;
+    line-height: 1.6;
+    color: var(--color-dark-text);
+    background-color: #FAFAFA;
+    border: 1px solid var(--color-border-grey);
+    border-radius: 2px;
+    resize: vertical;
+    outline: none;
+    box-sizing: border-box;
+    white-space: pre-wrap;
+    word-break: break-word;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.summary-textbox:focus {
+    border-color: var(--color-orange);
+    box-shadow: 0 0 0 2px rgba(233, 84, 32, 0.15);
 }

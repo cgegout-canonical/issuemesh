@@ -1,5 +1,8 @@
 /target
+/issuemesh
 secrets.env
 *.db
 *.db-wal
 *.db-shm
+*.snap
+.snapcraft/

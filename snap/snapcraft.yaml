@@ -1,0 +1,27 @@
+name: issuemesh
+base: core24
+version: '0.2.0'
+summary: Autonomous multi-tracker issue intelligence engine
+description: |
+  IssueMesh is an autonomous local-first issue intelligence engine that
+  federates issues, discussions, tasks, and code reviews across Launchpad,
+  GitHub, and Jira with deep graph expansion and hybrid ranking.
+grade: stable
+confinement: strict
+license: MIT OR Apache-2.0
+
+apps:
+  issuemesh:
+    command: bin/issuemesh
+    plugs:
+      - network
+      - network-bind
+      - home
+
+parts:
+  issuemesh:
+    plugin: rust
+    source: .
+    build-packages:
+      - build-essential
+      - pkg-config

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export CFLAGS="${CFLAGS:--fno-sanitize=undefined -fwrapv}"
+
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test

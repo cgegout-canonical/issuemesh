@@ -20,7 +20,7 @@ impl LaunchpadConnector {
             base_url,
             None,
             &[],
-            "issuemesh/0.1.0 (read-only)",
+            concat!("issuemesh/", env!("CARGO_PKG_VERSION"), " (read-only)"),
             2,
             300, // 300ms pacing between calls
         )?;

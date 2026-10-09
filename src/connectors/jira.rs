@@ -29,7 +29,7 @@ impl JiraConnector {
                 &em,
                 &tk,
                 &["/rest/api/3/search/jql", "/rest/api/3/jql/parse"],
-                "issuemesh/0.1.0 (read-only)",
+                concat!("issuemesh/", env!("CARGO_PKG_VERSION"), " (read-only)"),
                 4,
             )?
         } else {
@@ -37,7 +37,7 @@ impl JiraConnector {
                 &trimmed_base,
                 None,
                 &["/rest/api/3/search/jql", "/rest/api/3/jql/parse"],
-                "issuemesh/0.1.0 (read-only)",
+                concat!("issuemesh/", env!("CARGO_PKG_VERSION"), " (read-only)"),
                 4,
                 0,
             )?
@@ -64,14 +64,29 @@ impl JiraConnector {
         let mut clauses = Vec::new();
         let text_input = override_text.unwrap_or(&q.query).trim();
 
+        let mut jira_keys = Vec::new();
         if !text_input.is_empty() {
             let tokens: Vec<&str> = text_input.split_whitespace().collect();
             let all_keys = !tokens.is_empty()
                 && tokens
                     .iter()
                     .all(|t| crate::util::PAT_JIRA.is_match(t) && crate::util::is_jira_key(t));
+            for cap in crate::util::PAT_JIRA.captures_iter(text_input) {
+                let k = &cap[1];
+                if crate::util::is_jira_key(k) && !jira_keys.contains(&k.to_string()) {
+                    jira_keys.push(k.to_string());
+                }
+            }
+
             if all_keys {
                 clauses.push(format!("key in ({})", tokens.join(",")));
+            } else if !jira_keys.is_empty() {
+                let cleaned: String = text_input.chars().filter(|&c| c != '"').collect();
+                clauses.push(format!(
+                    "(key in ({}) OR text ~ \"{}\")",
+                    jira_keys.join(","),
+                    cleaned
+                ));
             } else {
                 let cleaned: String = text_input.chars().filter(|&c| c != '"').collect();
                 clauses.push(format!("text ~ \"{}\"", cleaned));
@@ -79,7 +94,7 @@ impl JiraConnector {
         }
 
         let mut projs = q.projects.clone();
-        if projs.is_empty() {
+        if projs.is_empty() && jira_keys.is_empty() {
             if let Some(ref dp) = self.default_project {
                 projs.push(dp.clone());
             }
@@ -231,12 +246,29 @@ impl Connector for JiraConnector {
         let jql = self.build_jql(q, None);
         let mut issues = self.execute_search(&jql, limit).await?;
 
-        // Quirk: text ~ is conjunctive on Jira Cloud; if more than three words return nothing, retry with first three words
+        // Quirk: text ~ is conjunctive on Jira Cloud; if more than three words return nothing, retry with informative non-stop words
         if issues.is_empty() && !q.query.trim().is_empty() {
-            let words: Vec<&str> = q.query.split_whitespace().collect();
-            if words.len() > 3 {
-                let first3 = words.into_iter().take(3).collect::<Vec<_>>().join(" ");
-                let retry_jql = self.build_jql(q, Some(&first3));
+            const STOP_WORDS: &[&str] = &[
+                "what", "which", "who", "whom", "where", "when", "why", "how", "is", "are", "was",
+                "were", "be", "been", "being", "the", "a", "an", "and", "or", "of", "in", "on",
+                "at", "to", "for", "from", "current", "status", "remains", "remain", "work",
+                "find", "all", "main", "issue", "issues", "bug", "bugs",
+            ];
+            let non_stop: Vec<&str> = q
+                .query
+                .split_whitespace()
+                .filter(|w| {
+                    let cleaned: String = w
+                        .chars()
+                        .filter(|c| c.is_alphanumeric() || *c == '-')
+                        .collect();
+                    let low = cleaned.to_lowercase();
+                    !STOP_WORDS.contains(&low.as_str()) && !low.is_empty()
+                })
+                .collect();
+            if !non_stop.is_empty() {
+                let fallback_text = non_stop.into_iter().take(3).collect::<Vec<_>>().join(" ");
+                let retry_jql = self.build_jql(q, Some(&fallback_text));
                 issues = self.execute_search(&retry_jql, limit).await?;
             }
         }

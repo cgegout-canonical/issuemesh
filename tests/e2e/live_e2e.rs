@@ -902,7 +902,7 @@ async fn e2e_60_binary_properties_and_isolation() {
         .expect("Binary should respond to --version");
     assert!(output.status.success());
     let ver_str = String::from_utf8_lossy(&output.stdout);
-    assert!(ver_str.contains("issuemesh") || ver_str.contains("0.1.0"));
+    assert!(ver_str.contains("issuemesh") || ver_str.contains(env!("CARGO_PKG_VERSION")));
 
     if let Ok(ldd_output) = Command::new("ldd").arg(&bin_path).output() {
         let ldd_str = String::from_utf8_lossy(&ldd_output.stdout);

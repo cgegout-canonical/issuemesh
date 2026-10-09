@@ -214,3 +214,221 @@ async fn test_health_api_and_probes() {
     assert!(sub.get("launchpad").is_some());
     assert!(sub.get("model").is_some());
 }
+
+#[tokio::test]
+async fn test_model_discovery_api() {
+    let (app, _state, _tmp) = setup_app_unonboarded().await;
+
+    // 1. GET /api/models without any base_url configured fails cleanly with empty models
+    let resp = tower::ServiceExt::oneshot(
+        app.clone(),
+        axum::http::Request::builder()
+            .uri("/api/models")
+            .body(axum::body::Body::empty())
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json_val: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(json_val["ok"], false);
+    assert!(json_val["models"].as_array().unwrap().is_empty());
+    assert!(json_val["error"]
+        .as_str()
+        .unwrap()
+        .contains("API endpoint URL is required for model discovery"));
+
+    // 2. Start mock OpenAI endpoint
+    use axum::routing::get;
+    use axum::Json;
+    use serde_json::json;
+    use tokio::net::TcpListener;
+
+    let mock_app = axum::Router::new().route(
+        "/v1/models",
+        get(|headers: axum::http::HeaderMap| async move {
+            let auth = headers.get("authorization").and_then(|h| h.to_str().ok());
+            if auth == Some("Bearer invalid-key") {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!({"error": {"message": "Invalid API key"}})),
+                );
+            }
+            if auth == Some("Bearer malformed") {
+                return (StatusCode::OK, Json(json!("not an object or list")));
+            }
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "data": [
+                        {"id": "openai/gpt-4o", "context_length": 128000},
+                        {"id": "text-embedding-3-small"}
+                    ]
+                })),
+            )
+        }),
+    );
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, mock_app).await.unwrap();
+    });
+
+    let base_url = format!("http://{}/v1", addr);
+
+    // 3. POST /api/models with valid endpoint and key
+    let payload = json!({
+        "base_url": base_url,
+        "api_key": "valid-key"
+    });
+    let resp = tower::ServiceExt::oneshot(
+        app.clone(),
+        axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/models")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(
+                serde_json::to_vec(&payload).unwrap(),
+            ))
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json_val: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(json_val["ok"], true);
+    assert_eq!(json_val["models"].as_array().unwrap().len(), 2);
+    assert_eq!(json_val["chat_models"].as_array().unwrap().len(), 1);
+    assert_eq!(json_val["chat_models"][0]["id"], "openai/gpt-4o");
+    assert_eq!(json_val["embedding_models"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        json_val["embedding_models"][0]["id"],
+        "text-embedding-3-small"
+    );
+
+    // 4. POST /api/models with 401 Unauthorized
+    let payload = json!({
+        "base_url": base_url,
+        "api_key": "invalid-key"
+    });
+    let resp = tower::ServiceExt::oneshot(
+        app.clone(),
+        axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/models")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(
+                serde_json::to_vec(&payload).unwrap(),
+            ))
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json_val: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(json_val["ok"], false);
+    assert!(json_val["error"]
+        .as_str()
+        .unwrap()
+        .contains("Authentication failed (HTTP 401 Unauthorized)"));
+    assert!(json_val["models"].as_array().unwrap().is_empty());
+
+    // 5. POST /api/models with unreachable host
+    let payload = json!({
+        "base_url": "http://127.0.0.1:9",
+        "api_key": "key"
+    });
+    let resp = tower::ServiceExt::oneshot(
+        app.clone(),
+        axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/models")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(
+                serde_json::to_vec(&payload).unwrap(),
+            ))
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json_val: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(json_val["ok"], false);
+    assert!(json_val["models"].as_array().unwrap().is_empty());
+    assert!(json_val["error"]
+        .as_str()
+        .unwrap()
+        .contains("Endpoint unreachable or invalid"));
+
+    // 6. POST /api/models with empty base_url
+    let payload = json!({
+        "base_url": "",
+        "api_key": ""
+    });
+    let resp = tower::ServiceExt::oneshot(
+        app.clone(),
+        axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/models")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(
+                serde_json::to_vec(&payload).unwrap(),
+            ))
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json_val: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(json_val["ok"], false);
+    assert!(json_val["models"].as_array().unwrap().is_empty());
+    assert_eq!(
+        json_val["error"].as_str().unwrap(),
+        "API endpoint URL is required for model discovery"
+    );
+
+    // 7. GET /api/models with query params
+    let resp = tower::ServiceExt::oneshot(
+        app.clone(),
+        axum::http::Request::builder()
+            .method("GET")
+            .uri(format!(
+                "/api/models?base_url={}&api_key=valid-key",
+                urlencoding_encode(&base_url)
+            ))
+            .body(axum::body::Body::empty())
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json_val: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(json_val["ok"], true);
+    assert_eq!(json_val["models"].as_array().unwrap().len(), 2);
+}
+
+fn urlencoding_encode(s: &str) -> String {
+    s.replace(":", "%3A").replace("/", "%2F")
+}

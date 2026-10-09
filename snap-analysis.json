@@ -1,0 +1,71 @@
+{
+  "schema_version": "1.0",
+  "project": {
+    "name": "issuemesh",
+    "version": "0.2.0",
+    "summary": "Autonomous multi-tracker issue intelligence engine",
+    "description": "IssueMesh is an autonomous local-first issue intelligence engine that federates issues, discussions, tasks, and code reviews across Launchpad, GitHub, and Jira with deep graph expansion and hybrid ranking.",
+    "license": "MIT OR Apache-2.0",
+    "grade": "stable"
+  },
+  "snap": {
+    "base": "core24",
+    "confinement": "strict",
+    "classic_reason": null
+  },
+  "build": {
+    "plugin": "rust",
+    "plugin_config": {},
+    "build_packages": [
+      "build-essential",
+      "pkg-config"
+    ],
+    "stage_packages": [],
+    "override_build_extra": null
+  },
+  "apps": [
+    {
+      "name": "issuemesh",
+      "command": "bin/issuemesh",
+      "daemon": null,
+      "plugs": [
+        "network",
+        "network-bind",
+        "home"
+      ],
+      "environment": {}
+    }
+  ],
+  "hooks": [],
+  "layouts": {},
+  "interfaces": [
+    {
+      "name": "network",
+      "apps": [
+        "issuemesh"
+      ],
+      "auto_connected": true,
+      "reason": "Allows outbound network access to query GitHub, Jira, and Launchpad APIs as well as LLM endpoints."
+    },
+    {
+      "name": "network-bind",
+      "apps": [
+        "issuemesh"
+      ],
+      "auto_connected": true,
+      "reason": "Allows binding to network ports (default 8765) to serve the Web UI and REST API."
+    },
+    {
+      "name": "home",
+      "apps": [
+        "issuemesh"
+      ],
+      "auto_connected": true,
+      "reason": "Allows access to user configuration or migration files in the user home directory."
+    }
+  ],
+  "notes": [
+    "Under Snap strict confinement, IssueMesh stores database, cache, and configuration in $SNAP_USER_COMMON by default.",
+    "Zero external dynamic dependencies on libssl or libsqlite3 (uses pure Rustls and bundled SQLite)."
+  ]
+}

@@ -12,7 +12,162 @@ function goToStep(step) {
         const badge = document.getElementById(`badge-${i}`);
         if (badge) badge.classList.add('active');
     }
+
+    if (step === 5) {
+        const urlInput = document.getElementById('model-base-url');
+        const chatSel = document.getElementById('model-chat');
+        if (urlInput && urlInput.value.trim() && chatSel && chatSel.options.length === 0) {
+            triggerModelDiscovery();
+        }
+    }
 }
+
+let modelDiscoveryTimer = null;
+let modelDiscoverySeq = 0;
+
+function triggerModelDiscovery(desiredChat, desiredEmbed, delay = 350) {
+    if (modelDiscoveryTimer) clearTimeout(modelDiscoveryTimer);
+    if (delay === 0) {
+        discoverModels(desiredChat, desiredEmbed);
+    } else {
+        modelDiscoveryTimer = setTimeout(() => {
+            discoverModels(desiredChat, desiredEmbed);
+        }, delay);
+    }
+}
+
+async function discoverModels(desiredChat, desiredEmbed) {
+    const urlInput = document.getElementById('model-base-url');
+    const keyInput = document.getElementById('model-api-key');
+    const chatSel = document.getElementById('model-chat');
+    const embedSel = document.getElementById('model-embed');
+    const statusBox = document.getElementById('model-discovery-status');
+
+    if (!urlInput || !chatSel || !embedSel) return;
+
+    const baseUrl = urlInput.value.trim();
+    const apiKey = keyInput ? keyInput.value.trim() : '';
+
+    if (!baseUrl) {
+        chatSel.innerHTML = '';
+        embedSel.innerHTML = '';
+        if (statusBox) {
+            statusBox.style.display = 'none';
+        }
+        return;
+    }
+
+    const prevChat = desiredChat || (chatSel.value && chatSel.value !== "" ? chatSel.value : (chatSel.dataset.selectedValue || ''));
+    const prevEmbed = desiredEmbed || (embedSel.value && embedSel.value !== "" ? embedSel.value : (embedSel.dataset.selectedValue || ''));
+    if (prevChat) chatSel.dataset.selectedValue = prevChat;
+    if (prevEmbed) embedSel.dataset.selectedValue = prevEmbed;
+
+    const seq = ++modelDiscoverySeq;
+
+    // Show loading state
+    if (statusBox) {
+        statusBox.style.display = 'block';
+        statusBox.className = 'probe-result';
+        statusBox.textContent = 'Discovering available models from endpoint...';
+    }
+    chatSel.disabled = true;
+    embedSel.disabled = true;
+    chatSel.innerHTML = '<option value="">Discovering models...</option>';
+    embedSel.innerHTML = '<option value="">Discovering models...</option>';
+
+    try {
+        const resp = await fetch('/api/models', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                base_url: baseUrl || null,
+                api_key: apiKey || null
+            })
+        });
+
+        const data = await resp.json();
+        if (seq !== modelDiscoverySeq) return;
+
+        if (!data.ok) {
+            chatSel.innerHTML = '';
+            embedSel.innerHTML = '';
+            chatSel.disabled = false;
+            embedSel.disabled = false;
+            if (statusBox) {
+                statusBox.style.display = 'block';
+                statusBox.className = 'probe-result probe-error';
+                statusBox.textContent = `✗ Model discovery failed: ${data.error || 'Failed to query endpoint'}`;
+            }
+            return;
+        }
+
+        // Success: populate dropdowns
+        chatSel.disabled = false;
+        embedSel.disabled = false;
+        chatSel.innerHTML = '';
+
+        const chatList = (data.chat_models && data.chat_models.length > 0) ? data.chat_models : data.models;
+        const embedList = (data.embedding_models && data.embedding_models.length > 0) ? data.embedding_models : data.models.filter(m => m.is_embedding);
+
+        chatList.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m.id;
+            opt.textContent = m.name && m.name !== m.id ? `${m.name} (${m.id})` : m.id;
+            chatSel.appendChild(opt);
+        });
+
+        if (embedList.length > 0) {
+            embedSel.innerHTML = '<option value="">-- None / Disabled --</option>';
+            embedList.forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m.id;
+                opt.textContent = m.name && m.name !== m.id ? `${m.name} (${m.id})` : m.id;
+                embedSel.appendChild(opt);
+            });
+        } else {
+            embedSel.innerHTML = '<option value="">-- No embedding models discovered --</option>';
+        }
+
+        const targetChat = desiredChat || chatSel.dataset.selectedValue || '';
+        if (targetChat) {
+            for (let i = 0; i < chatSel.options.length; i++) {
+                if (chatSel.options[i].value === targetChat) {
+                    chatSel.selectedIndex = i;
+                    break;
+                }
+            }
+        }
+
+        const targetEmbed = desiredEmbed || embedSel.dataset.selectedValue || '';
+        if (targetEmbed) {
+            for (let i = 0; i < embedSel.options.length; i++) {
+                if (embedSel.options[i].value === targetEmbed) {
+                    embedSel.selectedIndex = i;
+                    break;
+                }
+            }
+        }
+
+        if (statusBox) {
+            statusBox.style.display = 'block';
+            statusBox.className = 'probe-result probe-success';
+            statusBox.textContent = `✓ Discovered ${data.models.length} models (${chatList.length} chat, ${embedList.length} embedding)`;
+        }
+    } catch (e) {
+        if (seq !== modelDiscoverySeq) return;
+        chatSel.innerHTML = '';
+        embedSel.innerHTML = '';
+        chatSel.disabled = false;
+        embedSel.disabled = false;
+        if (statusBox) {
+            statusBox.style.display = 'block';
+            statusBox.className = 'probe-result probe-error';
+            statusBox.textContent = `✗ Model discovery request failed: ${e.message}`;
+        }
+    }
+}
+
+
 
 async function testGitHub() {
     const probe = document.getElementById('gh-probe');
@@ -224,3 +379,23 @@ async function finishSetup() {
         btn.textContent = 'Start IssueMesh →';
     }
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+    const urlInput = document.getElementById('model-base-url');
+    const keyInput = document.getElementById('model-api-key');
+
+    if (urlInput) {
+        urlInput.addEventListener('input', () => triggerModelDiscovery(undefined, undefined, 350));
+        urlInput.addEventListener('change', () => triggerModelDiscovery(undefined, undefined, 0));
+        urlInput.addEventListener('blur', () => triggerModelDiscovery(undefined, undefined, 0));
+        urlInput.addEventListener('paste', () => setTimeout(() => triggerModelDiscovery(undefined, undefined, 0), 10));
+    }
+    if (keyInput) {
+        keyInput.addEventListener('input', () => triggerModelDiscovery(undefined, undefined, 350));
+        keyInput.addEventListener('change', () => triggerModelDiscovery(undefined, undefined, 0));
+        keyInput.addEventListener('blur', () => triggerModelDiscovery(undefined, undefined, 0));
+        keyInput.addEventListener('paste', () => setTimeout(() => triggerModelDiscovery(undefined, undefined, 0), 10));
+    }
+});
+
+
