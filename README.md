@@ -450,4 +450,4 @@ CFLAGS="-fno-sanitize=undefined -fwrapv" cargo run --example run_benchmark -- al
 
 This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
 
-Copyright (c) 2026 Cedric Gegout <cedric.gegout@canonical.com>.
+Copyright 2026 Cedric Gegout Canonical Ltd.
