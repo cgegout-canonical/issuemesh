@@ -21,9 +21,9 @@ use tower::ServiceExt;
 #[test]
 fn test_introspection_config_levels() {
     let cfg_default = IntrospectionConfig::default();
-    assert_eq!(cfg_default.level, 2);
-    assert_eq!(cfg_default.level_name(), "Reasonable");
-    assert_eq!(cfg_default.questions_per_day(), 4);
+    assert_eq!(cfg_default.level, 0);
+    assert_eq!(cfg_default.level_name(), "None");
+    assert_eq!(cfg_default.questions_per_day(), 0);
 
     let levels = [
         (0, "None", 0),
@@ -31,7 +31,7 @@ fn test_introspection_config_levels() {
         (2, "Reasonable", 4),
         (3, "Curious", 7),
         (4, "Introvert!!", 10),
-        (5, "Reasonable", 4), // fallback to default
+        (5, "None", 0), // fallback to default
     ];
 
     for (lvl, expected_name, expected_count) in levels {

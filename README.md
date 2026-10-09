@@ -246,15 +246,16 @@ IssueMesh is designed for secure deployment in sensitive corporate engineering e
 
 ---
 
-## 10. Memory, Sources, Health & Introspection Pages
+## 10. Memory, Sources, Health, Introspection & Tutorial Pages
 
-IssueMesh provides five dedicated views in its embedded web frontend:
+IssueMesh provides dedicated views in its embedded web frontend:
 
 1. **Workbench (`/`)**: Main investigation interface. Live query input, SSE streaming search progression, ranked evidence cards, interactive relationship graph, consistency alerts, and synthesized answer.
 2. **Memory (`/memory`)**: Local memory management. Displays cached object counts by tracker, FTS5 index size, stored revisions, and unresolved reference queues. Includes cache clear controls.
 3. **Sources (`/sources`)**: Tracker status overview. Shows connection health, authentication state, base URLs, and active project/organization filters.
 4. **Health (`/health`)**: Diagnostic dashboard. Real-time API latency measurements, HTTP error rates, recent API audit logs, system resource metrics, and background Introspection probe status.
 5. **Introspection (`/introspection`)**: Continuous self-evaluation dashboard. Displays overall pass rates, average weighted scores across 5 dimensions, score trends, active problem areas, and recent self-challenge run histories with manual trigger capability. Complete architecture guide available at `/about-introspection`.
+6. **Tutorial (`/tutorial`)**: Beginner-friendly visual guide explaining how IssueMesh works in simple terms, step-by-step setup, example queries, how to interpret evidence and contradictions, and an accessible FAQ for users unfamiliar with AI or cross-tracker engineering workflows.
 
 ---
 
@@ -288,9 +289,9 @@ IssueMesh continuously evaluates its own search and synthesis quality through an
 - **Signal-Grounded Question Generation**: Questions are synthesized directly from actual tracker signals (recently updated issues, cross-tracker status discrepancies, unresolved relationships, stale cache items, and previous weak runs).
 - **Zero Hallucination Tolerance**: Evaluator inspects the generated answer, retrieved objects, and search plan. Any hallucinated tracker key or fabricated relation forces `Accuracy = 0` and immediate `FAIL`.
 - **Configurable Cadence**: Configured via an **Introspection level** slider in Settings (`/settings`):
-  - **Level 0 (None)**: 0 questions/day.
+  - **Level 0 (None)**: 0 questions/day *(recommended default)*.
   - **Level 1 (Light)**: 2 questions/day.
-  - **Level 2 (Reasonable)**: 4 questions/day *(recommended default)*.
+  - **Level 2 (Reasonable)**: 4 questions/day.
   - **Level 3 (Curious)**: 7 questions/day.
   - **Level 4 (Introvert!!)**: 10 questions/day.
 - **Spaced Scheduling & Crash Safety**: Questions are spread evenly across the day. The scheduler tracks today's run count in SQLite, tolerates application restarts without replaying missed questions in bursts, and strictly enforces single-flight execution (`AtomicBool`).

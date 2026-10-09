@@ -87,6 +87,7 @@
             <a href="/sources">Sources</a>
             <a href="/introspection">Introspection</a>
             <a href="/health">Health</a>
+            <a href="/tutorial">Tutorial</a>
             <a href="/settings">Settings</a>
         </nav>
         <div id="header-health" class="status-badge">
@@ -138,9 +139,9 @@
                 <tbody>
                     <tr>
                         <td><strong>0</strong></td>
-                        <td>None</td>
+                        <td>None <span class="pill-tag" style="color: var(--color-green); background: #e6f4ea;">Recommended</span></td>
                         <td>0 / day</td>
-                        <td>Introspection engine is completely disabled. No automated questions are run.</td>
+                        <td>Introspection engine is completely disabled. No automated questions are run. Recommended for standard production use and quiet operation.</td>
                     </tr>
                     <tr>
                         <td><strong>1</strong></td>
@@ -150,7 +151,7 @@
                     </tr>
                     <tr>
                         <td><strong>2</strong></td>
-                        <td>Reasonable <span class="pill-tag" style="color: var(--color-green); background: #e6f4ea;">Recommended</span></td>
+                        <td>Reasonable</td>
                         <td>4 / day</td>
                         <td>Balanced evaluation (every 6 hours). Continuously monitors graph consistency without straining LLM budgets.</td>
                     </tr>
@@ -164,7 +165,7 @@
                         <td><strong>4</strong></td>
                         <td>Introvert!!</td>
                         <td>10 / day</td>
-                        <td>Maximum self-scrutiny (~every 2.4 hours). Recommended for active development, large repositories, and deep verification.</td>
+                        <td>Maximum self-scrutiny (~every 2.4 hours). Intended for active development, large repositories, and deep verification.</td>
                     </tr>
                 </tbody>
             </table>

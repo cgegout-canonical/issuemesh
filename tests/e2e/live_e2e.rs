@@ -286,7 +286,9 @@ async fn e2e_04_ui_pages_availability() {
         ("/settings", "Settings"),
         ("/memory", "Local Memory"),
         ("/sources", "Sources"),
+        ("/introspection", "Introspection"),
         ("/health", "Health"),
+        ("/tutorial", "Tutorial"),
     ];
 
     for (path, expected_text) in pages {

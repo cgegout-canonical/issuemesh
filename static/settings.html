@@ -32,6 +32,7 @@
             <a href="/sources">Sources</a>
             <a href="/introspection">Introspection</a>
             <a href="/health">Health</a>
+            <a href="/tutorial">Tutorial</a>
             <a href="/settings" class="active">Settings</a>
         </nav>
         <div class="status-badge">
@@ -171,22 +172,22 @@
             
             <div class="form-group" style="margin-bottom: 1.5rem;">
                 <label for="intro-level" style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Introspection Level</label>
-                <input type="range" id="intro-level" min="0" max="4" step="1" value="2" 
+                <input type="range" id="intro-level" min="0" max="4" step="1" value="0" 
                        style="width: 100%; accent-color: var(--color-orange); cursor: pointer;"
                        oninput="updateIntroSliderUI(this.value)">
                 
                 <div style="display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--color-muted-text); margin-top: 0.4rem; padding: 0 4px;">
-                    <span id="lbl-lvl-0" style="text-align: left; cursor: pointer;" onclick="setIntroLevel(0)">None</span>
+                    <span id="lbl-lvl-0" style="text-align: left; cursor: pointer; font-weight: 600;" onclick="setIntroLevel(0)">None<br><small style="color: var(--color-green);">(Recommended)</small></span>
                     <span id="lbl-lvl-1" style="text-align: center; cursor: pointer;" onclick="setIntroLevel(1)">Light</span>
-                    <span id="lbl-lvl-2" style="text-align: center; cursor: pointer; font-weight: 600;" onclick="setIntroLevel(2)">Reasonable<br><small style="color: var(--color-green);">(Recommended)</small></span>
+                    <span id="lbl-lvl-2" style="text-align: center; cursor: pointer;" onclick="setIntroLevel(2)">Reasonable</span>
                     <span id="lbl-lvl-3" style="text-align: center; cursor: pointer;" onclick="setIntroLevel(3)">Curious</span>
                     <span id="lbl-lvl-4" style="text-align: right; cursor: pointer;" onclick="setIntroLevel(4)">Introvert!!</span>
                 </div>
                 
                 <div id="intro-frequency-display" style="margin-top: 1rem; text-align: center; padding: 0.6rem 1rem; background: var(--color-warm-grey); border: 1px solid var(--color-border-grey); border-radius: 2px;">
-                    <span id="intro-level-name" style="font-weight: 600; font-size: 1.05rem; color: var(--color-aubergine);">Reasonable</span>
+                    <span id="intro-level-name" style="font-weight: 600; font-size: 1.05rem; color: var(--color-aubergine);">None</span>
                     &mdash;
-                    <span id="intro-questions-per-day" style="font-weight: 600; font-size: 1.05rem; color: var(--color-orange);">4 / day</span>
+                    <span id="intro-questions-per-day" style="font-weight: 600; font-size: 1.05rem; color: var(--color-orange);">0 / day</span>
                     <span id="intro-recommended-badge" style="margin-left: 0.5rem; background: #e6f4ea; color: var(--color-green); font-size: 0.75rem; font-weight: 600; padding: 2px 6px; border-radius: 2px;">Recommended</span>
                 </div>
             </div>
@@ -250,7 +251,7 @@
                 document.getElementById('max-reads').value = data.config.search.max_deep_reads;
 
                 // Introspection
-                const introLevel = (data.config.introspection && data.config.introspection.level !== undefined) ? data.config.introspection.level : 2;
+                const introLevel = (data.config.introspection && data.config.introspection.level !== undefined) ? data.config.introspection.level : 0;
                 document.getElementById('intro-level').value = introLevel;
                 updateIntroSliderUI(introLevel);
             } catch (e) {
@@ -259,16 +260,16 @@
         }
 
         const INTRO_LEVELS = [
-            { level: 0, name: "None", count: 0, desc: "0 / day (Self-evaluation disabled)" },
+            { level: 0, name: "None", count: 0, desc: "0 / day (Self-evaluation disabled)", recommended: true },
             { level: 1, name: "Light", count: 2, desc: "2 / day" },
-            { level: 2, name: "Reasonable", count: 4, desc: "4 / day", recommended: true },
+            { level: 2, name: "Reasonable", count: 4, desc: "4 / day" },
             { level: 3, name: "Curious", count: 7, desc: "7 / day" },
             { level: 4, name: "Introvert!!", count: 10, desc: "10 / day" }
         ];
 
         function updateIntroSliderUI(val) {
             const idx = parseInt(val, 10);
-            const item = INTRO_LEVELS[idx] || INTRO_LEVELS[2];
+            const item = INTRO_LEVELS[idx] || INTRO_LEVELS[0];
             document.getElementById('intro-level-name').textContent = item.name;
             document.getElementById('intro-questions-per-day').textContent = `${item.count} / day`;
             document.getElementById('intro-recommended-badge').style.display = item.recommended ? 'inline-block' : 'none';
@@ -277,7 +278,7 @@
                 const el = document.getElementById(`lbl-lvl-${i}`);
                 if (el) {
                     el.style.color = (i === idx) ? 'var(--color-orange)' : 'var(--color-muted-text)';
-                    el.style.fontWeight = (i === idx) ? '700' : (i === 2 ? '600' : 'normal');
+                    el.style.fontWeight = (i === idx) ? '700' : (i === 0 ? '600' : 'normal');
                 }
             }
         }

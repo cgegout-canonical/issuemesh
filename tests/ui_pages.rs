@@ -74,6 +74,36 @@ async fn test_pages_render() {
             || body_str.contains("Connected Sources & Repositories")
     );
 
+    // Test GET /tutorial
+    let req = axum::http::Request::builder()
+        .uri("/tutorial")
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(res.into_body(), 100_000)
+        .await
+        .unwrap();
+    let body_str = String::from_utf8_lossy(&body);
+    assert!(
+        body_str.contains("Tutorial &amp; Beginner&#39;s Guide")
+            || body_str.contains("Tutorial & Beginner's Guide")
+            || body_str.contains("Tutorial")
+    );
+
+    // Test GET /introspection
+    let req = axum::http::Request::builder()
+        .uri("/introspection")
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(res.into_body(), 100_000)
+        .await
+        .unwrap();
+    let body_str = String::from_utf8_lossy(&body);
+    assert!(body_str.contains("Introspection"));
+
     // Test GET /search/xyz/run
     let req = axum::http::Request::builder()
         .uri("/search/xyz/run")

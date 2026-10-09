@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IssueMesh - Tutorial & Beginner's Guide</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .tutorial-container {
+            max-width: 920px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem 4rem 1.5rem;
+        }
+
+        .hero-banner {
+            background: linear-gradient(135deg, var(--color-dark-aubergine) 0%, var(--color-aubergine) 100%);
+            color: var(--color-white);
+            padding: 2.5rem 2rem;
+            border-radius: 4px;
+            margin-bottom: 2.5rem;
+            box-shadow: 0 4px 12px rgba(44, 0, 30, 0.15);
+        }
+
+        .hero-banner h1 {
+            font-size: 2.2rem;
+            font-weight: 400;
+            margin-bottom: 0.75rem;
+            color: var(--color-white);
+        }
+
+        .hero-banner p {
+            font-size: 1.15rem;
+            line-height: 1.6;
+            opacity: 0.92;
+            max-width: 750px;
+            margin-bottom: 1.25rem;
+        }
+
+        .hero-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            background: rgba(255, 255, 255, 0.15);
+            padding: 0.35rem 0.85rem;
+            border-radius: 20px;
+            font-size: 0.88rem;
+            backdrop-filter: blur(4px);
+        }
+
+        .quick-nav {
+            background: var(--color-warm-grey);
+            border: 1px solid var(--color-border-grey);
+            border-radius: 4px;
+            padding: 1.25rem 1.5rem;
+            margin-bottom: 3rem;
+        }
+
+        .quick-nav-title {
+            font-weight: 700;
+            font-size: 0.95rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--color-aubergine);
+            margin-bottom: 0.75rem;
+        }
+
+        .quick-nav-links {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 0.5rem 1.25rem;
+        }
+
+        .quick-nav-link {
+            color: var(--color-orange);
+            text-decoration: none;
+            font-size: 0.95rem;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            transition: transform 0.15s;
+        }
+
+        .quick-nav-link:hover {
+            text-decoration: underline;
+            transform: translateX(2px);
+        }
+
+        .tut-section {
+            margin-bottom: 3.5rem;
+            scroll-margin-top: 2rem;
+        }
+
+        .tut-section h2 {
+            font-size: 1.6rem;
+            font-weight: 500;
+            color: var(--color-dark-aubergine);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            border-bottom: 2px solid var(--color-warm-grey);
+            padding-bottom: 0.5rem;
+        }
+
+        .tut-section h3 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: var(--color-dark-text);
+            margin: 1.5rem 0 0.75rem 0;
+        }
+
+        .tut-section p {
+            font-size: 1rem;
+            line-height: 1.7;
+            color: #333333;
+            margin-bottom: 1rem;
+        }
+
+        .concept-card {
+            background: var(--color-white);
+            border: 1px solid var(--color-border-grey);
+            border-radius: 4px;
+            padding: 1.5rem;
+            margin: 1.25rem 0;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+        }
+
+        .concept-analogy {
+            border-left: 4px solid var(--color-orange);
+            background: #FFF9F5;
+            padding: 1.25rem 1.5rem;
+            border-radius: 0 4px 4px 0;
+            margin: 1.25rem 0;
+        }
+
+        .concept-analogy-title {
+            font-weight: 700;
+            color: var(--color-orange);
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .step-container {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            margin: 1.5rem 0;
+        }
+
+        .step-card {
+            display: flex;
+            gap: 1.25rem;
+            background: var(--color-white);
+            border: 1px solid var(--color-border-grey);
+            border-radius: 4px;
+            padding: 1.5rem;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+
+        .step-card:hover {
+            border-color: var(--color-orange);
+            box-shadow: 0 3px 8px rgba(233, 84, 32, 0.08);
+        }
+
+        .step-number {
+            width: 44px;
+            height: 44px;
+            background-color: var(--color-aubergine);
+            color: var(--color-white);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .step-body h4 {
+            font-size: 1.15rem;
+            margin-bottom: 0.4rem;
+            color: var(--color-dark-aubergine);
+        }
+
+        .step-body p {
+            margin-bottom: 0.6rem;
+        }
+
+        .step-tips {
+            background: var(--color-warm-grey);
+            border-left: 3px solid var(--color-mid-grey);
+            padding: 0.6rem 0.9rem;
+            font-size: 0.9rem;
+            color: var(--color-muted-text);
+            margin-top: 0.5rem;
+        }
+
+        .comparison-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin: 1.5rem 0;
+        }
+
+        @media (max-width: 720px) {
+            .comparison-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .comparison-box {
+            border: 1px solid var(--color-border-grey);
+            border-radius: 4px;
+            padding: 1.25rem;
+            background: var(--color-white);
+        }
+
+        .comparison-box.negative {
+            border-top: 4px solid var(--color-red);
+        }
+
+        .comparison-box.positive {
+            border-top: 4px solid var(--color-green);
+        }
+
+        .comparison-title {
+            font-weight: 700;
+            font-size: 1.05rem;
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .example-list {
+            list-style: none;
+            padding: 0;
+            margin: 1rem 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .example-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+            background: var(--color-warm-grey);
+            border: 1px solid var(--color-border-grey);
+            border-radius: 4px;
+            padding: 0.9rem 1.1rem;
+        }
+
+        .example-icon {
+            color: var(--color-green);
+            font-weight: bold;
+            font-size: 1.1rem;
+            line-height: 1.2;
+        }
+
+        .example-query {
+            font-family: var(--font-mono);
+            font-size: 0.92rem;
+            color: var(--color-aubergine);
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .example-why {
+            font-size: 0.88rem;
+            color: var(--color-muted-text);
+            line-height: 1.4;
+        }
+
+        .faq-item {
+            border: 1px solid var(--color-border-grey);
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            background: var(--color-white);
+            overflow: hidden;
+        }
+
+        .faq-question {
+            padding: 1rem 1.25rem;
+            font-weight: 600;
+            font-size: 1.05rem;
+            background: var(--color-warm-grey);
+            color: var(--color-dark-aubergine);
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .faq-question:hover {
+            background: #f0f0f0;
+        }
+
+        .faq-answer {
+            padding: 1.25rem;
+            color: #333333;
+            line-height: 1.65;
+            font-size: 0.96rem;
+            border-top: 1px solid var(--color-border-grey);
+        }
+
+        .badge-pill {
+            display: inline-block;
+            padding: 2px 8px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            border-radius: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .badge-green { background: #e6f4ea; color: var(--color-green); }
+        .badge-orange { background: #fff1e5; color: var(--color-orange); }
+        .badge-aubergine { background: #fbf7fa; color: var(--color-aubergine); }
+
+        .callout-box {
+            padding: 1rem 1.25rem;
+            border-radius: 4px;
+            margin: 1.25rem 0;
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        .callout-success {
+            background: #eef9ee;
+            border-left: 4px solid var(--color-green);
+            color: #1e7e34;
+        }
+
+        .callout-info {
+            background: #f0f7ff;
+            border-left: 4px solid #0066cc;
+            color: #004085;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/" class="brand">
+            <span class="brand-dot"></span>
+            IssueMesh
+        </a>
+        <nav>
+            <a href="/">Search</a>
+            <a href="/memory">Memory</a>
+            <a href="/sources">Sources</a>
+            <a href="/introspection">Introspection</a>
+            <a href="/health">Health</a>
+            <a href="/tutorial" class="active">Tutorial</a>
+            <a href="/settings">Settings</a>
+        </nav>
+        <div id="header-health" class="status-badge">
+            <span class="dot dot-healthy"></span>
+            <span>Ready</span>
+        </div>
+    </header>
+
+    <main class="tutorial-container">
+        <!-- Hero Section -->
+        <div class="hero-banner">
+            <h1>Welcome to IssueMesh</h1>
+            <p>
+                A beginner-friendly guide to searching, connecting, and understanding engineering issues across Jira, GitHub, and Launchpad&mdash;without the tech jargon.
+            </p>
+            <div class="hero-badges">
+                <span class="hero-badge">&#128269; Multi-Tracker Search</span>
+                <span class="hero-badge">&#128737;&#65039; 100% Read-Only Safety</span>
+                <span class="hero-badge">&#128274; Local &amp; Private</span>
+                <span class="hero-badge">&#128683; Zero Hallucinations</span>
+            </div>
+        </div>
+
+        <!-- Quick Navigation -->
+        <div class="quick-nav">
+            <div class="quick-nav-title">What would you like to learn?</div>
+            <div class="quick-nav-links">
+                <a href="#what-is-issuemesh" class="quick-nav-link">&rarr; 1. What is IssueMesh? (In Simple Terms)</a>
+                <a href="#why-different" class="quick-nav-link">&rarr; 2. Why is it Different from ChatGPT?</a>
+                <a href="#getting-started" class="quick-nav-link">&rarr; 3. Quick Start in 3 Easy Steps</a>
+                <a href="#asking-questions" class="quick-nav-link">&rarr; 4. How to Ask Questions That Work</a>
+                <a href="#understanding-results" class="quick-nav-link">&rarr; 5. Understanding Your Search Results</a>
+                <a href="#exploring-tabs" class="quick-nav-link">&rarr; 6. A Tour of the Website Tabs</a>
+                <a href="#faq" class="quick-nav-link">&rarr; 7. Frequently Asked Questions (FAQ)</a>
+            </div>
+        </div>
+
+        <!-- 1. What is IssueMesh? -->
+        <section id="what-is-issuemesh" class="tut-section">
+            <h2><span>&#128161;</span> 1. What is IssueMesh? (In Simple Terms)</h2>
+            <p>
+                If you work with engineering or software teams, you probably know that work gets scattered across many different websites:
+            </p>
+            <ul>
+                <li><strong>Jira:</strong> Where project managers write plans, tasks, and feature requests.</li>
+                <li><strong>GitHub:</strong> Where software developers write code, discuss pull requests (PRs), and review changes.</li>
+                <li><strong>Launchpad:</strong> Where Ubuntu and open-source communities report bugs and release packages.</li>
+            </ul>
+
+            <div class="concept-analogy">
+                <div class="concept-analogy-title">
+                    <span>&#128065;&#65039;</span> The Everyday Analogy: The "Messy Office"
+                </div>
+                <p>
+                    Imagine Team A writes their notes on sticky notes on a wall (Jira). Team B works in a workshop in the basement (GitHub). Team C pins bug reports on a bulletin board in the lobby (Launchpad).
+                </p>
+                <p style="margin-bottom: 0;">
+                    When someone asks: <em>"Did we fix that bug, and is it ready for the customer?"</em>, you usually have to run between the wall, the basement, and the lobby, open 20 browser tabs, and try to piece together the truth. 
+                    <strong>IssueMesh is like having a super-smart research assistant who reads all three boards at once and gives you the exact answer in 10 seconds.</strong>
+                </p>
+            </div>
+        </section>
+
+        <!-- 2. Why is it Different from Typical AI? -->
+        <section id="why-different" class="tut-section">
+            <h2><span>&#129302;</span> 2. Why is it Different from ChatGPT or Other Chatbots?</h2>
+            <p>
+                Many people have tried AI chatbots and noticed that they sometimes sound very confident but completely make things up (known in AI as <em>"hallucinations"</em>).
+            </p>
+            <p>
+                In engineering, an invented ticket number or a fake status can cause serious mistakes. That is why IssueMesh was built with strict safety rules:
+            </p>
+
+            <div class="comparison-grid">
+                <div class="comparison-box negative">
+                    <div class="comparison-title" style="color: var(--color-red);">
+                        <span>&#10060;</span> Typical AI Chatbots
+                    </div>
+                    <ul style="padding-left: 1.25rem; font-size: 0.92rem; color: #555;">
+                        <li>Might guess when they don't know the answer.</li>
+                        <li>Can invent fake ticket numbers (e.g. "OPEN-9999").</li>
+                        <li>Give vague, conversational text without real links.</li>
+                        <li>Cannot check if a pull request was actually merged.</li>
+                    </ul>
+                </div>
+                <div class="comparison-box positive">
+                    <div class="comparison-title" style="color: var(--color-green);">
+                        <span>&#9989;</span> IssueMesh
+                    </div>
+                    <ul style="padding-left: 1.25rem; font-size: 0.92rem; color: #555;">
+                        <li><strong>Zero hallucination rule:</strong> Never invents ticket numbers or statuses.</li>
+                        <li><strong>Always brings the receipts:</strong> Every claim links to real issues, dates, and authors.</li>
+                        <li><strong>Refuses to guess:</strong> If no evidence exists, it says <em>"Insufficient evidence"</em>.</li>
+                        <li><strong>Spots contradictions:</strong> Warns you if Jira says "Done" but the code is still open!</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. Getting Started in 3 Easy Steps -->
+        <section id="getting-started" class="tut-section">
+            <h2><span>&#128640;</span> 3. Quick Start in 3 Easy Steps</h2>
+            <p>
+                You don't need any special technical skills to configure IssueMesh. Follow these three steps:
+            </p>
+
+            <div class="step-container">
+                <!-- Step 1 -->
+                <div class="step-card">
+                    <div class="step-number">1</div>
+                    <div class="step-body">
+                        <h4>Connect Your Trackers (In Settings)</h4>
+                        <p>
+                            Click on the <strong>Settings</strong> tab at the top. You will see sections for GitHub, Jira, and Launchpad.
+                        </p>
+                        <p>
+                            Toggle on whichever trackers you use. You can enter an API Token or Personal Access Token (PAT). Think of a token like a special digital key that allows IssueMesh to read your tickets.
+                        </p>
+                        <div class="step-tips">
+                            <strong>&#128737;&#65039; Read-Only Guarantee:</strong> IssueMesh is strictly read-only. It has no code to edit, delete, or comment on your issues. Your tickets are 100% safe.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 2 -->
+                <div class="step-card">
+                    <div class="step-number">2</div>
+                    <div class="step-body">
+                        <h4>Select an AI Model</h4>
+                        <p>
+                            In the <strong>AI Model Settings</strong> section, enter your provider's API Endpoint (for example, OpenRouter, OpenAI, or a local model like Ollama) and paste your API Key.
+                        </p>
+                        <p>
+                            <strong>No typing required:</strong> IssueMesh immediately connects to the provider and fills in a convenient dropdown list of all available models. Just pick the one you like!
+                        </p>
+                        <div class="step-tips">
+                            <strong>&#128161; Tip:</strong> If you don't want to use AI at all, you can still search! IssueMesh will use its built-in local search engine to find tickets and map relationships without needing any AI.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 3 -->
+                <div class="step-card">
+                    <div class="step-number">3</div>
+                    <div class="step-body">
+                        <h4>Ask Your First Question!</h4>
+                        <p>
+                            Click on the <strong>Search</strong> tab at the top. Type your question in plain English, just like you would ask a teammate, and click the orange <strong>Search</strong> button.
+                        </p>
+                        <div class="step-tips">
+                            <strong>&#9889; Watch Live:</strong> You will see a live progress box showing IssueMesh searching the trackers, following links, and assembling the evidence in real time.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. How to Ask Questions That Work -->
+        <section id="asking-questions" class="tut-section">
+            <h2><span>&#10067;</span> 4. How to Ask Questions That Work</h2>
+            <p>
+                You don't need to know fancy "prompt engineering" or special computer codes. Just ask what you want to know. Here are great examples:
+            </p>
+
+            <ul class="example-list">
+                <li class="example-item">
+                    <span class="example-icon">&#10004;</span>
+                    <div>
+                        <div class="example-query">"What is the status of OPEN-4679 and are there any PRs open for it?"</div>
+                        <div class="example-why">Great because it gives a specific ticket key. IssueMesh will find the Jira ticket, locate linked GitHub PRs, and compare their statuses.</div>
+                    </div>
+                </li>
+                <li class="example-item">
+                    <span class="example-icon">&#10004;</span>
+                    <div>
+                        <div class="example-query">"Why is Launchpad bug 2095892 still not resolved?"</div>
+                        <div class="example-why">IssueMesh will read the bug report and recent comments, then tell you who was assigned and what blocker is stopping it.</div>
+                    </div>
+                </li>
+                <li class="example-item">
+                    <span class="example-icon">&#10004;</span>
+                    <div>
+                        <div class="example-query">"Has the Sunbeam BGP routing feature landed in code?"</div>
+                        <div class="example-why">Searches across Jira epics and GitHub pull requests to verify if the code was actually merged or is still under review.</div>
+                    </div>
+                </li>
+                <li class="example-item">
+                    <span class="example-icon">&#10004;</span>
+                    <div>
+                        <div class="example-query">"Are there any open blockers for the 2026.1 release milestone?"</div>
+                        <div class="example-why">Finds release tracking issues and lists all items marked as blocking the release.</div>
+                    </div>
+                </li>
+            </ul>
+
+            <div class="callout-box callout-info">
+                <strong>What is "Deep Search"?</strong><br>
+                Normal search engines only look for words in titles. IssueMesh performs a <em>deep graph search</em>: when it finds a ticket, it automatically clicks on related links, reads comments, looks up the pull requests mentioned in commit messages, and connects the whole story together for you.
+            </div>
+        </section>
+
+        <!-- 5. Understanding Your Search Results -->
+        <section id="understanding-results" class="tut-section">
+            <h2><span>&#128202;</span> 5. Understanding Your Search Results</h2>
+            <p>
+                When a search finishes, IssueMesh presents the information in four clean sections:
+            </p>
+
+            <div class="concept-card">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                    <h3 style="margin: 0; color: var(--color-aubergine);">1. The Direct Answer</h3>
+                    <span class="badge-pill badge-green">Evidence-Backed</span>
+                </div>
+                <p>
+                    A clear, concise summary (always under 250 words) answering your exact question. It highlights the current state, ownership, and key conclusions.
+                </p>
+            </div>
+
+            <div class="concept-card">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                    <h3 style="margin: 0; color: var(--color-orange);">2. Contradiction Warnings</h3>
+                    <span class="badge-pill badge-orange">Important Alert</span>
+                </div>
+                <p>
+                    If one tracker says an issue is resolved, but another tracker shows the code is still open or unmerged, IssueMesh flags this discrepancy with an orange warning badge so you don't get blindsided.
+                </p>
+            </div>
+
+            <div class="concept-card">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                    <h3 style="margin: 0; color: var(--color-aubergine);">3. Evidence Cards ("The Receipts")</h3>
+                    <span class="badge-pill badge-aubergine">Source Records</span>
+                </div>
+                <p>
+                    Each ticket or PR found is shown as an interactive card. You can see the ticket title, author, date, current status, and click the link to open the original ticket on GitHub, Jira, or Launchpad.
+                </p>
+            </div>
+
+            <div class="concept-card">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                    <h3 style="margin: 0; color: var(--color-aubergine);">4. The Relationship Graph</h3>
+                    <span class="badge-pill badge-green">Visual Map</span>
+                </div>
+                <p>
+                    A visual diagram showing how issues relate to each other (e.g., <em>Ticket A blocks Ticket B</em>, or <em>Pull Request C fixes Bug D</em>).
+                </p>
+            </div>
+        </section>
+
+        <!-- 6. A Tour of the Website Tabs -->
+        <section id="exploring-tabs" class="tut-section">
+            <h2><span>&#129517;</span> 6. A Tour of the Website Tabs</h2>
+            <p>
+                Here is a quick overview of what each page in the navigation bar does:
+            </p>
+
+            <table class="table-custom" style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+                <thead>
+                    <tr style="background: var(--color-warm-grey); text-align: left;">
+                        <th style="padding: 0.75rem; border: 1px solid var(--color-border-grey);">Tab</th>
+                        <th style="padding: 0.75rem; border: 1px solid var(--color-border-grey);">What It's For</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td style="padding: 0.75rem; border: 1px solid var(--color-border-grey); font-weight: 600;"><a href="/" style="color: var(--color-orange); text-decoration: none;">Search</a></td>
+                        <td style="padding: 0.75rem; border: 1px solid var(--color-border-grey);">Your everyday workbench. Type questions, view live search progress, read answers, and inspect evidence.</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 0.75rem; border: 1px solid var(--color-border-grey); font-weight: 600;"><a href="/memory" style="color: var(--color-orange); text-decoration: none;">Memory</a></td>
+                        <td style="padding: 0.75rem; border: 1px solid var(--color-border-grey);">The local filing cabinet on your computer. IssueMesh saves downloaded tickets here so repeated searches are lightning fast.</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 0.75rem; border: 1px solid var(--color-border-grey); font-weight: 600;"><a href="/sources" style="color: var(--color-orange); text-decoration: none;">Sources</a></td>
+                        <td style="padding: 0.75rem; border: 1px solid var(--color-border-grey);">Overview of your connected trackers. Shows green status lights when GitHub, Jira, and Launchpad are online.</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 0.75rem; border: 1px solid var(--color-border-grey); font-weight: 600;"><a href="/introspection" style="color: var(--color-orange); text-decoration: none;">Introspection</a></td>
+                        <td style="padding: 0.75rem; border: 1px solid var(--color-border-grey);">
+                            IssueMesh's self-testing engine. It tests its own search skills in the background to ensure quality.<br>
+                            <small style="color: var(--color-green); font-weight: 600;">(Recommended default is 'None' so it stays completely quiet until you want it to run).</small>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 0.75rem; border: 1px solid var(--color-border-grey); font-weight: 600;"><a href="/health" style="color: var(--color-orange); text-decoration: none;">Health</a></td>
+                        <td style="padding: 0.75rem; border: 1px solid var(--color-border-grey);">System diagnostic dashboard showing network speeds, response times, and background probe status.</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 0.75rem; border: 1px solid var(--color-border-grey); font-weight: 600;"><a href="/tutorial" style="color: var(--color-orange); text-decoration: none;">Tutorial</a></td>
+                        <td style="padding: 0.75rem; border: 1px solid var(--color-border-grey);">This beginner-friendly guide!</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 0.75rem; border: 1px solid var(--color-border-grey); font-weight: 600;"><a href="/settings" style="color: var(--color-orange); text-decoration: none;">Settings</a></td>
+                        <td style="padding: 0.75rem; border: 1px solid var(--color-border-grey);">Configure your tokens, tracker URLs, AI models, and introspection level.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- 7. Frequently Asked Questions (FAQ) -->
+        <section id="faq" class="tut-section">
+            <h2><span>&#10068;</span> 7. Frequently Asked Questions (FAQ)</h2>
+
+            <div class="faq-item">
+                <div class="faq-question">Can IssueMesh accidentally edit or delete any of my tickets?</div>
+                <div class="faq-answer">
+                    <strong>No, never!</strong> IssueMesh is engineered with compile-time, read-only guarantees. Its code physically cannot send HTTP commands like <code>PUT</code>, <code>PATCH</code>, or <code>DELETE</code> to your issue trackers. It can only read public or authorized information.
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <div class="faq-question">What does it mean when IssueMesh says "Insufficient evidence"?</div>
+                <div class="faq-answer">
+                    Be happy when you see this! It means IssueMesh searched your trackers and couldn't find solid proof to answer the question, so it honestly told you so. Unlike typical chatbots that invent believable lies, IssueMesh prefers telling the truth about missing data.
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <div class="faq-question">Do I need all three trackers (Jira, GitHub, AND Launchpad) to use it?</div>
+                <div class="faq-answer">
+                    No! You can use IssueMesh with just GitHub, just Jira, or any combination. Simply enable the ones you use in the Settings tab, and leave the others disabled.
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <div class="faq-question">Where is my data stored? Is it sent to the cloud?</div>
+                <div class="faq-answer">
+                    All your search history, ticket cache, and settings are saved <strong>100% locally on your computer</strong> in a SQLite database (inside <code>~/.issuemesh/</code>). Only your search query and retrieved ticket snippets are sent to your configured AI model provider to write the summary.
+                </div>
+            </div>
+
+            <div class="faq-item">
+                <div class="faq-question">What should I set the "Introspection Level" to?</div>
+                <div class="faq-answer">
+                    We recommend setting it to <strong>None (0 / day)</strong>. This keeps IssueMesh completely quiet and ensures it only uses computing resources and AI tokens when you explicitly type a search query.
+                </div>
+            </div>
+        </section>
+
+        <!-- Call to Action -->
+        <div class="callout-box callout-success" style="text-align: center; padding: 2rem;">
+            <h3 style="margin-top: 0; color: #1e7e34; font-size: 1.3rem;">Ready to start searching?</h3>
+            <p style="color: #2b542c; margin-bottom: 1.25rem;">Head over to the search workbench and try asking a question about your project!</p>
+            <a href="/" class="btn btn-primary" style="display: inline-block; text-decoration: none; padding: 0.75rem 1.75rem; font-size: 1rem;">Go to Search &rarr;</a>
+        </div>
+    </main>
+</body>
+</html>

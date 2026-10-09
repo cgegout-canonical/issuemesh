@@ -168,7 +168,7 @@ pub struct IntrospectionConfig {
 }
 
 fn default_introspection_level() -> u8 {
-    2
+    0
 }
 
 impl Default for IntrospectionConfig {
@@ -187,7 +187,7 @@ impl IntrospectionConfig {
             2 => "Reasonable",
             3 => "Curious",
             4 => "Introvert!!",
-            _ => "Reasonable",
+            _ => "None",
         }
     }
 
@@ -198,7 +198,7 @@ impl IntrospectionConfig {
             2 => 4,
             3 => 7,
             4 => 10,
-            _ => 4,
+            _ => 0,
         }
     }
 }

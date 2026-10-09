@@ -35,6 +35,7 @@ pub fn build_router(state: AppState) -> Router {
             "/about-introspection",
             get(about_introspection_page_handler),
         )
+        .route("/tutorial", get(tutorial_page_handler))
         .route("/search/{id}/run", get(search_run_page_handler))
         // API routes
         .route("/api/health", get(health_api_handler))
@@ -185,6 +186,13 @@ async fn about_introspection_page_handler() -> impl IntoResponse {
     match Assets::get("about-introspection.html") {
         Some(content) => Html(content.data).into_response(),
         None => (StatusCode::NOT_FOUND, "about-introspection.html not found").into_response(),
+    }
+}
+
+async fn tutorial_page_handler() -> impl IntoResponse {
+    match Assets::get("tutorial.html") {
+        Some(content) => Html(content.data).into_response(),
+        None => (StatusCode::NOT_FOUND, "tutorial.html not found").into_response(),
     }
 }
 
