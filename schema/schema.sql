@@ -154,3 +154,35 @@ CREATE TABLE IF NOT EXISTS introspection_runs (
 CREATE INDEX IF NOT EXISTS idx_introspection_runs_created_at ON introspection_runs(created_at);
 CREATE INDEX IF NOT EXISTS idx_introspection_runs_fingerprint ON introspection_runs(question_fingerprint);
 CREATE INDEX IF NOT EXISTS idx_introspection_runs_result ON introspection_runs(result);
+
+-- Watchlists for tracking object, project, topic, and query changes
+CREATE TABLE IF NOT EXISTS watchlists (
+    id TEXT PRIMARY KEY,
+    target_type TEXT NOT NULL,
+    target_value TEXT NOT NULL,
+    title TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_checked_at TEXT,
+    last_snapshot_json TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_watchlists_target_type ON watchlists(target_type);
+CREATE INDEX IF NOT EXISTS idx_watchlists_target_value ON watchlists(target_value);
+
+-- Saved investigations preserving research questions, evidence graphs, and conclusions
+CREATE TABLE IF NOT EXISTS saved_investigations (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    query TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    conclusions_markdown TEXT NOT NULL,
+    evidence_keys_json TEXT NOT NULL,
+    snapshot_json TEXT NOT NULL,
+    last_reopened_at TEXT,
+    tags TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_saved_investigations_created_at ON saved_investigations(created_at);
+CREATE INDEX IF NOT EXISTS idx_saved_investigations_title ON saved_investigations(title);
+

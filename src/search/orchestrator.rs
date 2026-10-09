@@ -25,6 +25,8 @@ pub struct DeepSearchResult {
     pub answer: Option<String>,
     #[serde(default)]
     pub warnings: Vec<String>,
+    #[serde(default)]
+    pub confidence: Option<crate::intelligence::ConfidenceReport>,
 }
 
 pub const DEFAULT_ANALYSIS_ENGINE_PROMPT: &str = r#"You are the analysis engine for **IssueMesh**, an engineering search system covering **Jira, GitHub and Launchpad**.
@@ -886,6 +888,22 @@ impl SearchOrchestrator {
                 .await;
         }
 
+        let ev_items: Vec<crate::connectors::Evidence> =
+            final_ranked.iter().map(|r| r.evidence.clone()).collect();
+        let unavailable_sources_count = warnings
+            .iter()
+            .filter(|w| {
+                let lower = w.to_lowercase();
+                lower.contains("unavailable") || lower.contains("auth") || lower.contains("failed")
+            })
+            .count();
+        let confidence_report = crate::intelligence::calculate_confidence(
+            &ev_items,
+            &collected_relations,
+            0,
+            unavailable_sources_count,
+        );
+
         DeepSearchResult {
             query: query.to_string(),
             plan,
@@ -895,6 +913,7 @@ impl SearchOrchestrator {
             stats,
             answer,
             warnings,
+            confidence: Some(confidence_report),
         }
     }
 }

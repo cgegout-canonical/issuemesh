@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IssueMesh - Engineering Intelligence</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .tabs-nav {
+            display: flex;
+            gap: 0.5rem;
+            border-bottom: 2px solid var(--color-border-grey);
+            margin-bottom: 1.5rem;
+            overflow-x: auto;
+        }
+        .tab-btn {
+            background: none;
+            border: none;
+            padding: 0.6rem 1.2rem;
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: var(--color-muted-text);
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.15s ease-in-out;
+            white-space: nowrap;
+        }
+        .tab-btn:hover {
+            color: var(--color-dark-text);
+        }
+        .tab-btn.active {
+            color: var(--color-orange);
+            border-bottom-color: var(--color-orange);
+            font-weight: 600;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .stat-card {
+            background: var(--color-white);
+            border: 1px solid var(--color-border-grey);
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+        }
+        .stat-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--color-muted-text);
+            font-weight: 600;
+            margin-bottom: 0.4rem;
+        }
+        .stat-value {
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: var(--color-dark-text);
+        }
+        .stat-subtext {
+            font-size: 0.85rem;
+            color: var(--color-muted-text);
+            margin-top: 0.3rem;
+        }
+        .badge-severity-critical {
+            background-color: #fce8e6;
+            color: var(--color-red);
+            border: 1px solid #fad2cf;
+            font-weight: 600;
+            padding: 0.2rem 0.5rem;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+        }
+        .badge-severity-high {
+            background-color: #fff3e0;
+            color: #d35400;
+            border: 1px solid #ffe0b2;
+            font-weight: 600;
+            padding: 0.2rem 0.5rem;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+        }
+        .badge-severity-medium {
+            background-color: #fef7e0;
+            color: #b06000;
+            border: 1px solid #feefc3;
+            font-weight: 600;
+            padding: 0.2rem 0.5rem;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+        }
+        .badge-severity-low {
+            background-color: #e8f0fe;
+            color: #1a73e8;
+            border: 1px solid #d2e3fc;
+            font-weight: 600;
+            padding: 0.2rem 0.5rem;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+        }
+        .evidence-path-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            background: var(--color-warm-grey);
+            border: 1px solid var(--color-border-grey);
+            padding: 0.2rem 0.5rem;
+            border-radius: 3px;
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+        }
+        .timeline-event {
+            position: relative;
+            padding-left: 2rem;
+            margin-bottom: 1.5rem;
+            border-left: 2px solid var(--color-border-grey);
+        }
+        .timeline-event::before {
+            content: '';
+            position: absolute;
+            left: -7px;
+            top: 4px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--color-orange);
+        }
+        pre.code-block {
+            background: #202020;
+            color: #f0f0f0;
+            padding: 1rem;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/" class="brand">
+            <span class="brand-dot"></span>
+            IssueMesh
+        </a>
+        <nav>
+            <a href="/">Search</a>
+            <a href="/intelligence" class="active">Intelligence</a>
+            <a href="/memory">Memory</a>
+            <a href="/sources">Sources</a>
+            <a href="/introspection">Introspection</a>
+            <a href="/health">Health</a>
+            <a href="/tutorial">Tutorial</a>
+            <a href="/settings">Settings</a>
+        </nav>
+        <div id="header-health" class="status-badge">
+            <span class="dot dot-healthy"></span>
+            <span>Ready</span>
+        </div>
+    </header>
+
+    <main class="container">
+        <div style="margin-bottom: 2rem;">
+            <h1 style="font-size: 2rem; font-weight: 300; margin-bottom: 0.5rem;">Engineering Intelligence</h1>
+            <p style="color: var(--color-muted-text);">Deep engineering analytics: impact traversal, risk radar, chronological story reconstruction, watchlists, governance gaps, readiness, and MCP integration.</p>
+        </div>
+
+        <div class="tabs-nav">
+            <button class="tab-btn active" onclick="switchTab('watchlists')">Watchlists & Diffs</button>
+            <button class="tab-btn" onclick="switchTab('impact')">Impact Analysis</button>
+            <button class="tab-btn" onclick="switchTab('risk')">Risk Radar</button>
+            <button class="tab-btn" onclick="switchTab('timeline')">Story & Timeline</button>
+            <button class="tab-btn" onclick="switchTab('gaps')">Governance Gaps</button>
+            <button class="tab-btn" onclick="switchTab('investigations')">Saved Investigations</button>
+            <button class="tab-btn" onclick="switchTab('readiness')">Release Readiness</button>
+            <button class="tab-btn" onclick="switchTab('mcp')">MCP & Agents</button>
+        </div>
+
+        <!-- TAB 1: WATCHLISTS -->
+        <div id="tab-watchlists" class="tab-content active">
+            <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 1.5rem;">
+                <div class="card">
+                    <div class="card-title">Add to Watchlist</div>
+                    <form onsubmit="event.preventDefault(); createWatchlist();" style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1rem;">
+                        <div>
+                            <label style="font-size: 0.85rem; font-weight: 600;">Watchlist Title</label>
+                            <input type="text" id="wl-title" class="search-input" placeholder="e.g. BGP Routing Track" style="width: 100%;" required>
+                        </div>
+                        <div>
+                            <label style="font-size: 0.85rem; font-weight: 600;">Target Type</label>
+                            <select id="wl-target-type" class="search-input" style="width: 100%;">
+                                <option value="issue">Single Issue / Object Key</option>
+                                <option value="project">Project Container</option>
+                                <option value="topic">Topic Keyword</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size: 0.85rem; font-weight: 600;">Target Value</label>
+                            <input type="text" id="wl-target-val" class="search-input" placeholder="e.g. jira:issue:OPEN-4679 or canonical/sunbeam" style="width: 100%;" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="margin-top: 0.5rem;">Create Watchlist</button>
+                    </form>
+
+                    <hr style="border: 0; border-top: 1px solid var(--color-border-grey); margin: 1.5rem 0;">
+
+                    <div class="card-title">Object Revision Diff</div>
+                    <p style="font-size: 0.85rem; color: var(--color-muted-text); margin-bottom: 0.75rem;">Check what changed historically for any specific object.</p>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <input type="text" id="diff-object-key" class="search-input" placeholder="jira:issue:OPEN-4679" style="flex: 1;">
+                        <button class="btn btn-secondary" onclick="checkObjectHistory()">Diff</button>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                            <div class="card-title" style="margin: 0;">Active Watchlists</div>
+                            <button class="btn btn-secondary" style="font-size: 0.8rem;" onclick="loadWatchlists()">Refresh</button>
+                        </div>
+                        <div id="watchlists-list" style="display: flex; flex-direction: column; gap: 1rem;">
+                            <p style="color: var(--color-muted-text);">Loading watchlists...</p>
+                        </div>
+                    </div>
+
+                    <div id="diff-output-card" class="card" style="display: none; margin-top: 1.5rem;">
+                        <div class="card-title">What Changed Report</div>
+                        <div id="diff-output-content" style="margin-top: 0.75rem;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: IMPACT ANALYSIS -->
+        <div id="tab-impact" class="tab-content">
+            <div class="card" style="margin-bottom: 1.5rem;">
+                <div class="card-title">Impact & Blast Radius Analysis</div>
+                <p style="color: var(--color-muted-text); font-size: 0.9rem; margin-bottom: 1rem;">
+                    Traverse dependencies, blockers, fixed-by PRs, downstream bugs, and releases with complete evidence path attribution.
+                </p>
+                <form onsubmit="event.preventDefault(); runImpactAnalysis();" style="display: flex; gap: 0.75rem;">
+                    <input type="text" id="impact-target-key" class="search-input" placeholder="e.g. jira:issue:OPEN-4679 or github:pull:canonical/sunbeam#12" style="flex: 1;" required>
+                    <button type="submit" class="btn btn-primary">Analyse Impact</button>
+                </form>
+            </div>
+
+            <div id="impact-results" style="display: none;">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <span class="stat-label">Blast Radius Severity</span>
+                        <div class="stat-value" id="impact-severity">—</div>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">Total Impacted Objects</span>
+                        <div class="stat-value" id="impact-total">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">Direct Blockers</span>
+                        <div class="stat-value" id="impact-direct">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">Transitive Impact</span>
+                        <div class="stat-value" id="impact-transitive">0</div>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-bottom: 1.5rem;">
+                    <div class="card-title">Executive Summary</div>
+                    <p id="impact-summary-text" style="margin-top: 0.5rem; font-size: 0.95rem;"></p>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Downstream & Upstream Impacted Objects</div>
+                    <div id="impact-items-list" style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1rem;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 3: RISK RADAR -->
+        <div id="tab-risk" class="tab-content">
+            <div class="card" style="margin-bottom: 1.5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div class="card-title">Engineering Risk Radar</div>
+                        <p style="color: var(--color-muted-text); font-size: 0.9rem; margin-top: 0.25rem;">
+                            Proactively detects stale blockers, critical inactivity, merged PRs with unresolved Jira work, contradictory states, and orphan dependencies.
+                        </p>
+                    </div>
+                    <button class="btn btn-primary" onclick="runRiskRadar()">Scan Mesh</button>
+                </div>
+            </div>
+
+            <div id="risk-results" style="display: none;">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <span class="stat-label">Total Detected Risks</span>
+                        <div class="stat-value" id="risk-total">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">Critical / High Risks</span>
+                        <div class="stat-value" id="risk-critical" style="color: var(--color-red);">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">Stale Blockers</span>
+                        <div class="stat-value" id="risk-stale">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">Governance Contradictions</span>
+                        <div class="stat-value" id="risk-contradictions">0</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <div class="card-title" style="margin: 0;">Risk Findings</div>
+                        <select id="risk-category-filter" class="search-input" style="padding: 0.3rem 0.6rem; font-size: 0.85rem;" onchange="filterRisks()">
+                            <option value="all">All Categories</option>
+                            <option value="merged_pr_unresolved_jira">Merged PR with Unresolved Jira</option>
+                            <option value="stale_blocker">Stale Blocker</option>
+                            <option value="critical_inactivity">Critical Issue Inactivity</option>
+                            <option value="missing_owner">Missing Owner</option>
+                            <option value="contradictory_state">Contradictory Tracker State</option>
+                        </select>
+                    </div>
+                    <div id="risk-items-list" style="display: flex; flex-direction: column; gap: 0.75rem;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 4: STORY & TIMELINE -->
+        <div id="tab-timeline" class="tab-content">
+            <div class="card" style="margin-bottom: 1.5rem;">
+                <div class="card-title">Timeline & Story Reconstruction</div>
+                <p style="color: var(--color-muted-text); font-size: 0.9rem; margin-bottom: 1rem;">
+                    Synthesizes cross-tracker chronology across Jira, GitHub, and Launchpad into an engineering narrative.
+                </p>
+                <form onsubmit="event.preventDefault(); runTimeline();" style="display: flex; gap: 0.75rem;">
+                    <input type="text" id="timeline-root-key" class="search-input" placeholder="e.g. jira:issue:OPEN-4679" style="flex: 1;" required>
+                    <button type="submit" class="btn btn-primary">Reconstruct Story</button>
+                </form>
+            </div>
+
+            <div id="timeline-results" style="display: none;">
+                <div class="card" style="margin-bottom: 1.5rem;">
+                    <div class="card-title">Story Narrative</div>
+                    <p id="timeline-narrative" style="white-space: pre-wrap; font-size: 0.95rem; line-height: 1.6; margin-top: 0.5rem;"></p>
+                </div>
+
+                <div class="card">
+                    <div class="card-title" style="margin-bottom: 1.5rem;">Chronological Events</div>
+                    <div id="timeline-events-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 5: GOVERNANCE GAPS -->
+        <div id="tab-gaps" class="tab-content">
+            <div class="card" style="margin-bottom: 1.5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div class="card-title">What Are We Missing? (Governance Gaps)</div>
+                        <p style="color: var(--color-muted-text); font-size: 0.9rem; margin-top: 0.25rem;">
+                            Detects gaps such as active requirements without PRs, merged code missing release evidence, and unlinked work.
+                        </p>
+                    </div>
+                    <button class="btn btn-primary" onclick="runGapDetection()">Detect Gaps</button>
+                </div>
+            </div>
+
+            <div id="gaps-results" style="display: none;">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <span class="stat-label">Total Gaps Found</span>
+                        <div class="stat-value" id="gaps-total">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">Jira Without PR</span>
+                        <div class="stat-value" id="gaps-no-pr">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">Merged Without Release</span>
+                        <div class="stat-value" id="gaps-no-release">0</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title" style="margin-bottom: 1rem;">Detected Gaps</div>
+                    <div id="gaps-items-list" style="display: flex; flex-direction: column; gap: 0.75rem;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 6: SAVED INVESTIGATIONS -->
+        <div id="tab-investigations" class="tab-content">
+            <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 1.5rem;">
+                <div class="card">
+                    <div class="card-title">Save Investigation</div>
+                    <form onsubmit="event.preventDefault(); saveInvestigation();" style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1rem;">
+                        <div>
+                            <label style="font-size: 0.85rem; font-weight: 600;">Title</label>
+                            <input type="text" id="inv-title" class="search-input" placeholder="e.g. Sunbeam BGP Readiness" style="width: 100%;" required>
+                        </div>
+                        <div>
+                            <label style="font-size: 0.85rem; font-weight: 600;">Original Query</label>
+                            <input type="text" id="inv-query" class="search-input" placeholder="e.g. Sunbeam BGP status" style="width: 100%;" required>
+                        </div>
+                        <div>
+                            <label style="font-size: 0.85rem; font-weight: 600;">Conclusions Markdown</label>
+                            <textarea id="inv-conclusions" class="search-input" rows="4" placeholder="Findings and current status..." style="width: 100%;" required></textarea>
+                        </div>
+                        <div>
+                            <label style="font-size: 0.85rem; font-weight: 600;">Evidence Keys (comma separated)</label>
+                            <input type="text" id="inv-keys" class="search-input" placeholder="jira:issue:OPEN-4679, github:pull:canonical/sunbeam#12" style="width: 100%;" required>
+                        </div>
+                        <div>
+                            <label style="font-size: 0.85rem; font-weight: 600;">Tags</label>
+                            <input type="text" id="inv-tags" class="search-input" placeholder="bgp, release, sunbeam" style="width: 100%;">
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="margin-top: 0.5rem;">Save Investigation</button>
+                    </form>
+                </div>
+
+                <div>
+                    <div class="card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                            <div class="card-title" style="margin: 0;">Saved Investigations</div>
+                            <button class="btn btn-secondary" style="font-size: 0.8rem;" onclick="loadInvestigations()">Refresh</button>
+                        </div>
+                        <div id="investigations-list" style="display: flex; flex-direction: column; gap: 1rem;">
+                            <p style="color: var(--color-muted-text);">Loading saved investigations...</p>
+                        </div>
+                    </div>
+
+                    <div id="reopened-card" class="card" style="display: none; margin-top: 1.5rem;">
+                        <div class="card-title">Investigation Reopened: Delta Analysis</div>
+                        <div id="reopened-content" style="margin-top: 0.75rem;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 7: RELEASE READINESS -->
+        <div id="tab-readiness" class="tab-content">
+            <div class="card" style="margin-bottom: 1.5rem;">
+                <div class="card-title">Production & Release Readiness Assessment</div>
+                <p style="color: var(--color-muted-text); font-size: 0.9rem; margin-bottom: 1rem;">
+                    Evaluates readiness score (0-100%), unresolved blockers, high-priority work, implementation percentage, and tracker inconsistencies.
+                </p>
+                <form onsubmit="event.preventDefault(); evaluateReadiness();" style="display: flex; gap: 0.75rem;">
+                    <input type="text" id="readiness-target" class="search-input" placeholder="Project container (e.g. canonical/sunbeam), milestone, or topic" style="flex: 1;" required>
+                    <button type="submit" class="btn btn-primary">Assess Readiness</button>
+                </form>
+            </div>
+
+            <div id="readiness-results" style="display: none;">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <span class="stat-label">Readiness Score</span>
+                        <div class="stat-value" id="readiness-score">0%</div>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">Verdict</span>
+                        <div class="stat-value" id="readiness-verdict">—</div>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">Active Blockers</span>
+                        <div class="stat-value" id="readiness-blockers" style="color: var(--color-red);">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-label">Implementation</span>
+                        <div class="stat-value" id="readiness-impl">0%</div>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-bottom: 1.5rem;">
+                    <div class="card-title">Readiness Executive Summary</div>
+                    <p id="readiness-summary-text" style="margin-top: 0.5rem; font-size: 0.95rem;"></p>
+                </div>
+
+                <div class="card">
+                    <div class="card-title" style="margin-bottom: 1rem;">Detailed Assessment Findings</div>
+                    <div id="readiness-breakdown" style="display: flex; flex-direction: column; gap: 0.75rem;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 8: MCP & AGENTS -->
+        <div id="tab-mcp" class="tab-content">
+            <div class="card" style="margin-bottom: 1.5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div class="card-title">Model Context Protocol (MCP) Server</div>
+                        <p style="color: var(--color-muted-text); font-size: 0.9rem; margin-top: 0.25rem;">
+                            IssueMesh exposes 16 engineering intelligence tools over MCP stdio and JSON-RPC HTTP endpoint.
+                        </p>
+                    </div>
+                    <div id="mcp-status-pill" class="status-badge">
+                        <span class="dot dot-healthy"></span>
+                        <span>MCP Server Active</span>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+                <div class="card">
+                    <div class="card-title">Claude Code / Desktop Integration</div>
+                    <p style="font-size: 0.85rem; color: var(--color-muted-text); margin-bottom: 0.5rem;">Add to your <code>claude_desktop_config.json</code>:</p>
+                    <pre class="code-block">{
+  "mcpServers": {
+    "issuemesh": {
+      "command": "issuemesh",
+      "args": ["mcp"]
+    }
+  }
+}</pre>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Antigravity & Cognition Configuration</div>
+                    <p style="font-size: 0.85rem; color: var(--color-muted-text); margin-bottom: 0.5rem;">Connect via local HTTP endpoint:</p>
+                    <pre class="code-block">{
+  "mcpServers": {
+    "issuemesh": {
+      "type": "http",
+      "url": "http://127.0.0.1:8765/api/mcp"
+    }
+  }
+}</pre>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title" style="margin-bottom: 1rem;">Advertised MCP Tools (16)</div>
+                <div id="mcp-tools-list" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem;"></div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            const selectedBtn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.getAttribute('onclick').includes(tabId));
+            if (selectedBtn) selectedBtn.classList.add('active');
+            
+            const selectedContent = document.getElementById('tab-' + tabId);
+            if (selectedContent) selectedContent.classList.add('active');
+
+            if (tabId === 'watchlists') loadWatchlists();
+            if (tabId === 'investigations') loadInvestigations();
+            if (tabId === 'mcp') loadMcpTools();
+        }
+
+        async function loadWatchlists() {
+            const list = document.getElementById('watchlists-list');
+            try {
+                const resp = await fetch('/api/intelligence/watchlists');
+                const data = await resp.json();
+                if (!data || data.length === 0) {
+                    list.innerHTML = '<p style="color: var(--color-muted-text);">No watchlists configured yet. Add your first watchlist on the left.</p>';
+                    return;
+                }
+                list.innerHTML = data.map(wl => `
+                    <div style="border: 1px solid var(--color-border-grey); padding: 1rem; border-radius: 3px; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div style="font-weight: 600; font-size: 1rem;">${escapeHtml(wl.title)}</div>
+                            <div style="font-size: 0.85rem; color: var(--color-muted-text); font-family: var(--font-mono); margin-top: 0.2rem;">
+                                ${escapeHtml(wl.target_type)}: <strong>${escapeHtml(wl.target_value)}</strong>
+                            </div>
+                            <div style="font-size: 0.75rem; color: var(--color-muted-text); margin-top: 0.25rem;">
+                                Created: ${new Date(wl.created_at).toLocaleDateString()}
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button class="btn btn-secondary" style="font-size: 0.8rem;" onclick="checkWatchlist('${wl.id}')">Check Changes</button>
+                            <button class="btn btn-secondary" style="font-size: 0.8rem; color: var(--color-red);" onclick="deleteWatchlist('${wl.id}')">Delete</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                list.innerHTML = `<p style="color: var(--color-red);">Error loading watchlists: ${escapeHtml(String(e))}</p>`;
+            }
+        }
+
+        async function createWatchlist() {
+            const title = document.getElementById('wl-title').value.trim();
+            const target_type = document.getElementById('wl-target-type').value;
+            const target_value = document.getElementById('wl-target-val').value.trim();
+            if (!title || !target_value) return;
+
+            try {
+                const resp = await fetch('/api/intelligence/watchlists', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, target_type, target_value })
+                });
+                if (resp.ok) {
+                    document.getElementById('wl-title').value = '';
+                    document.getElementById('wl-target-val').value = '';
+                    loadWatchlists();
+                } else {
+                    alert('Failed to create watchlist');
+                }
+            } catch (e) {
+                alert('Error creating watchlist: ' + e);
+            }
+        }
+
+        async function checkWatchlist(id) {
+            const outCard = document.getElementById('diff-output-card');
+            const outContent = document.getElementById('diff-output-content');
+            outCard.style.display = 'block';
+            outContent.innerHTML = '<p style="color: var(--color-muted-text);">Evaluating changes...</p>';
+
+            try {
+                const resp = await fetch(`/api/intelligence/what-changed?watchlist_id=${encodeURIComponent(id)}`);
+                const data = await resp.json();
+                renderDiffReport(data.diff, `Watchlist: ${escapeHtml(data.title)}`);
+            } catch (e) {
+                outContent.innerHTML = `<p style="color: var(--color-red);">Error: ${escapeHtml(String(e))}</p>`;
+            }
+        }
+
+        async function checkObjectHistory() {
+            const key = document.getElementById('diff-object-key').value.trim();
+            if (!key) return;
+
+            const outCard = document.getElementById('diff-output-card');
+            const outContent = document.getElementById('diff-output-content');
+            outCard.style.display = 'block';
+            outContent.innerHTML = '<p style="color: var(--color-muted-text);">Loading historical revisions...</p>';
+
+            try {
+                const resp = await fetch(`/api/intelligence/what-changed?key=${encodeURIComponent(key)}`);
+                const data = await resp.json();
+                
+                let html = `<div style="font-weight: 600; margin-bottom: 0.5rem;">${escapeHtml(data.summary)}</div>`;
+                if (!data.revision_history || data.revision_history.length === 0) {
+                    html += '<p style="color: var(--color-muted-text);">No revision history recorded for this object yet.</p>';
+                } else {
+                    html += data.revision_history.map(r => `
+                        <div style="border-left: 3px solid var(--color-orange); padding-left: 0.75rem; margin-bottom: 0.75rem;">
+                            <div style="font-size: 0.8rem; color: var(--color-muted-text);">${new Date(r.captured_at).toLocaleString()}</div>
+                            <div style="font-size: 0.9rem; font-weight: 500;">${escapeHtml(r.details)}</div>
+                        </div>
+                    `).join('');
+                }
+                outContent.innerHTML = html;
+            } catch (e) {
+                outContent.innerHTML = `<p style="color: var(--color-red);">Error: ${escapeHtml(String(e))}</p>`;
+            }
+        }
+
+        async function deleteWatchlist(id) {
+            if (!confirm('Delete this watchlist?')) return;
+            try {
+                await fetch(`/api/intelligence/watchlists/${encodeURIComponent(id)}`, { method: 'DELETE' });
+                loadWatchlists();
+            } catch (e) {
+                alert('Error deleting watchlist: ' + e);
+            }
+        }
+
+        function renderDiffReport(diff, label) {
+            const outContent = document.getElementById('diff-output-content');
+            let html = `<div style="font-weight: 600; margin-bottom: 0.5rem;">${label}</div>`;
+            html += `<p style="font-size: 0.9rem; margin-bottom: 0.75rem;">${escapeHtml(diff.summary)}</p>`;
+            
+            if (diff.state_changes && diff.state_changes.length > 0) {
+                html += `<div style="font-size: 0.85rem; font-weight: 600; color: var(--color-orange); margin-bottom: 0.3rem;">State Changes:</div>`;
+                html += diff.state_changes.map(sc => `
+                    <div style="padding: 0.4rem 0.6rem; background: var(--color-warm-grey); margin-bottom: 0.4rem; font-size: 0.85rem;">
+                        <strong>${escapeHtml(sc.object_key)}</strong>: ${escapeHtml(sc.title)}
+                        ${sc.field_diffs.map(f => `<br>&bull; ${f.field}: <s>${escapeHtml(f.old_val)}</s> &rarr; <strong>${escapeHtml(f.new_val)}</strong>`).join('')}
+                    </div>
+                `).join('');
+            }
+            outContent.innerHTML = html;
+        }
+
+        async function runImpactAnalysis() {
+            const key = document.getElementById('impact-target-key').value.trim();
+            if (!key) return;
+
+            const resDiv = document.getElementById('impact-results');
+            resDiv.style.display = 'block';
+
+            try {
+                const resp = await fetch(`/api/intelligence/impact?key=${encodeURIComponent(key)}`);
+                const data = await resp.json();
+
+                document.getElementById('impact-severity').innerText = data.overall_severity;
+                document.getElementById('impact-total').innerText = data.total_impacted;
+                document.getElementById('impact-direct').innerText = data.direct_impacts;
+                document.getElementById('impact-transitive').innerText = data.transitive_impacts;
+                document.getElementById('impact-summary-text').innerText = data.summary;
+
+                const list = document.getElementById('impact-items-list');
+                if (!data.items || data.items.length === 0) {
+                    list.innerHTML = '<p style="color: var(--color-muted-text);">No downstream impacted objects found.</p>';
+                    return;
+                }
+
+                list.innerHTML = data.items.map(item => `
+                    <div style="border: 1px solid var(--color-border-grey); padding: 0.75rem 1rem; border-radius: 3px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem;">
+                            <div>
+                                <span class="badge-severity-${item.severity.toLowerCase()}">${item.severity}</span>
+                                <span style="font-weight: 600; font-family: var(--font-mono); margin-left: 0.5rem;">${escapeHtml(item.object_key)}</span>
+                            </div>
+                            <span style="font-size: 0.85rem; color: var(--color-muted-text);">${escapeHtml(item.state)}</span>
+                        </div>
+                        <div style="font-weight: 500; font-size: 0.95rem; margin-bottom: 0.4rem;">${escapeHtml(item.title)}</div>
+                        <div style="font-size: 0.85rem; color: var(--color-muted-text); margin-bottom: 0.4rem;">${escapeHtml(item.explanation)}</div>
+                        <div style="display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap;">
+                            <span style="font-size: 0.75rem; color: var(--color-muted-text); text-transform: uppercase;">Evidence Path:</span>
+                            ${item.evidence_path.map(p => `<span class="evidence-path-pill">${escapeHtml(p)}</span>`).join('&rarr;')}
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                alert('Impact analysis failed: ' + e);
+            }
+        }
+
+        let cachedRisks = [];
+        async function runRiskRadar() {
+            const resDiv = document.getElementById('risk-results');
+            resDiv.style.display = 'block';
+
+            try {
+                const resp = await fetch('/api/intelligence/risk');
+                const data = await resp.json();
+                cachedRisks = data.items || [];
+
+                document.getElementById('risk-total').innerText = data.total_risks;
+                document.getElementById('risk-critical').innerText = cachedRisks.filter(r => r.severity === 'Critical' || r.severity === 'High').length;
+                document.getElementById('risk-stale').innerText = cachedRisks.filter(r => r.category.includes('stale')).length;
+                document.getElementById('risk-contradictions').innerText = cachedRisks.filter(r => r.category.includes('contradict')).length;
+
+                renderRiskList(cachedRisks);
+            } catch (e) {
+                alert('Risk radar scan failed: ' + e);
+            }
+        }
+
+        function filterRisks() {
+            const cat = document.getElementById('risk-category-filter').value;
+            if (cat === 'all') {
+                renderRiskList(cachedRisks);
+            } else {
+                renderRiskList(cachedRisks.filter(r => r.category === cat));
+            }
+        }
+
+        function renderRiskList(items) {
+            const list = document.getElementById('risk-items-list');
+            if (!items || items.length === 0) {
+                list.innerHTML = '<p style="color: var(--color-muted-text);">No risk items matching filter.</p>';
+                return;
+            }
+
+            list.innerHTML = items.map(r => `
+                <div style="border: 1px solid var(--color-border-grey); padding: 0.75rem 1rem; border-radius: 3px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem;">
+                        <div>
+                            <span class="badge-severity-${r.severity.toLowerCase()}">${r.severity}</span>
+                            <span style="font-weight: 600; font-family: var(--font-mono); margin-left: 0.5rem;">${escapeHtml(r.category)}</span>
+                        </div>
+                    </div>
+                    <div style="font-weight: 500; font-size: 0.95rem; margin-bottom: 0.3rem;">${escapeHtml(r.title)}</div>
+                    <div style="font-size: 0.85rem; color: var(--color-muted-text); margin-bottom: 0.4rem;">${escapeHtml(r.explanation)}</div>
+                    <div style="font-size: 0.85rem; color: var(--color-aubergine); font-style: italic;">
+                        <strong>Remediation:</strong> ${escapeHtml(r.remediation)}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function runTimeline() {
+            const key = document.getElementById('timeline-root-key').value.trim();
+            if (!key) return;
+
+            const resDiv = document.getElementById('timeline-results');
+            resDiv.style.display = 'block';
+
+            try {
+                const resp = await fetch(`/api/intelligence/timeline?key=${encodeURIComponent(key)}`);
+                const data = await resp.json();
+
+                document.getElementById('timeline-narrative').innerText = data.story_narrative;
+                const list = document.getElementById('timeline-events-list');
+
+                if (!data.events || data.events.length === 0) {
+                    list.innerHTML = '<p style="color: var(--color-muted-text);">No chronological events detected.</p>';
+                    return;
+                }
+
+                list.innerHTML = data.events.map(ev => `
+                    <div class="timeline-event">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.2rem;">
+                            <span class="badge badge-${ev.source}">${ev.source.toUpperCase()}</span>
+                            <span style="font-size: 0.8rem; color: var(--color-muted-text);">${new Date(ev.timestamp).toLocaleString()}</span>
+                        </div>
+                        <div style="font-weight: 600; font-size: 0.95rem;">${escapeHtml(ev.title)}</div>
+                        <div style="font-size: 0.85rem; color: var(--color-muted-text); margin-top: 0.2rem;">${escapeHtml(ev.description)}</div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                alert('Timeline reconstruction failed: ' + e);
+            }
+        }
+
+        async function runGapDetection() {
+            const resDiv = document.getElementById('gaps-results');
+            resDiv.style.display = 'block';
+
+            try {
+                const resp = await fetch('/api/intelligence/gaps');
+                const data = await resp.json();
+
+                document.getElementById('gaps-total').innerText = data.total_gaps;
+                document.getElementById('gaps-no-pr').innerText = (data.items || []).filter(g => g.category.includes('without_pr')).length;
+                document.getElementById('gaps-no-release').innerText = (data.items || []).filter(g => g.category.includes('release')).length;
+
+                const list = document.getElementById('gaps-items-list');
+                if (!data.items || data.items.length === 0) {
+                    list.innerHTML = '<p style="color: var(--color-muted-text);">No governance gaps detected!</p>';
+                    return;
+                }
+
+                list.innerHTML = data.items.map(gap => `
+                    <div style="border: 1px solid var(--color-border-grey); padding: 0.75rem 1rem; border-radius: 3px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                            <span class="badge-severity-${gap.severity.toLowerCase()}">${gap.severity}</span>
+                            <span style="font-weight: 600; font-family: var(--font-mono); font-size: 0.85rem;">${escapeHtml(gap.category)}</span>
+                        </div>
+                        <div style="font-weight: 500; font-size: 0.95rem; margin-bottom: 0.25rem;">${escapeHtml(gap.title)}</div>
+                        <div style="font-size: 0.85rem; color: var(--color-muted-text);">${escapeHtml(gap.description)}</div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                alert('Gap detection failed: ' + e);
+            }
+        }
+
+        async function loadInvestigations() {
+            const list = document.getElementById('investigations-list');
+            try {
+                const resp = await fetch('/api/intelligence/investigations');
+                const data = await resp.json();
+                if (!data || data.length === 0) {
+                    list.innerHTML = '<p style="color: var(--color-muted-text);">No investigations saved yet.</p>';
+                    return;
+                }
+
+                list.innerHTML = data.map(inv => `
+                    <div style="border: 1px solid var(--color-border-grey); padding: 1rem; border-radius: 3px; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div style="font-weight: 600; font-size: 1rem;">${escapeHtml(inv.title)}</div>
+                            <div style="font-size: 0.85rem; color: var(--color-muted-text); margin-top: 0.2rem;">
+                                Query: <em>"${escapeHtml(inv.query)}"</em> · Tags: ${escapeHtml(inv.tags || 'none')}
+                            </div>
+                            <div style="font-size: 0.75rem; color: var(--color-muted-text); margin-top: 0.25rem;">
+                                Last saved: ${new Date(inv.created_at).toLocaleDateString()}
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button class="btn btn-secondary" style="font-size: 0.8rem;" onclick="reopenInvestigation('${inv.id}')">Reopen & Diff</button>
+                            <button class="btn btn-secondary" style="font-size: 0.8rem; color: var(--color-red);" onclick="deleteInvestigation('${inv.id}')">Delete</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                list.innerHTML = `<p style="color: var(--color-red);">Error loading investigations: ${escapeHtml(String(e))}</p>`;
+            }
+        }
+
+        async function saveInvestigation() {
+            const title = document.getElementById('inv-title').value.trim();
+            const query = document.getElementById('inv-query').value.trim();
+            const conclusions_markdown = document.getElementById('inv-conclusions').value.trim();
+            const keys_raw = document.getElementById('inv-keys').value.trim();
+            const tags = document.getElementById('inv-tags').value.trim() || null;
+            if (!title || !query || !conclusions_markdown) return;
+
+            const evidence_keys = keys_raw.split(',').map(s => s.trim()).filter(Boolean);
+
+            try {
+                const resp = await fetch('/api/intelligence/investigations', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, query, conclusions_markdown, evidence_keys, tags })
+                });
+                if (resp.ok) {
+                    document.getElementById('inv-title').value = '';
+                    document.getElementById('inv-query').value = '';
+                    document.getElementById('inv-conclusions').value = '';
+                    document.getElementById('inv-keys').value = '';
+                    loadInvestigations();
+                } else {
+                    alert('Failed to save investigation');
+                }
+            } catch (e) {
+                alert('Error saving investigation: ' + e);
+            }
+        }
+
+        async function reopenInvestigation(id) {
+            const repCard = document.getElementById('reopened-card');
+            const repContent = document.getElementById('reopened-content');
+            repCard.style.display = 'block';
+            repContent.innerHTML = '<p style="color: var(--color-muted-text);">Evaluating changes since investigation was saved...</p>';
+
+            try {
+                const resp = await fetch(`/api/intelligence/investigations/${encodeURIComponent(id)}/reopen`);
+                const data = await resp.json();
+                
+                let html = `<div style="font-weight: 600; font-size: 1.05rem; margin-bottom: 0.5rem;">${escapeHtml(data.investigation.title)}</div>`;
+                html += `<div style="font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--color-aubergine); font-weight: 500;">${escapeHtml(data.updated_conclusions_guidance)}</div>`;
+
+                if (data.deltas.changed_evidence.length > 0) {
+                    html += `<div style="font-size: 0.85rem; font-weight: 600; color: var(--color-orange); margin-bottom: 0.3rem;">Changed Evidence (${data.deltas.changed_evidence.length}):</div>`;
+                    html += data.deltas.changed_evidence.map(e => `
+                        <div style="padding: 0.4rem 0.6rem; background: var(--color-warm-grey); font-size: 0.85rem; margin-bottom: 0.3rem;">
+                            <strong>${escapeHtml(e.object_key)}</strong>: ${escapeHtml(e.title)} (State: ${escapeHtml(e.state)})
+                        </div>
+                    `).join('');
+                }
+
+                if (data.deltas.resolved_evidence.length > 0) {
+                    html += `<div style="font-size: 0.85rem; font-weight: 600; color: var(--color-green); margin-top: 0.5rem; margin-bottom: 0.3rem;">Newly Resolved Items (${data.deltas.resolved_evidence.length}):</div>`;
+                    html += data.deltas.resolved_evidence.map(e => `
+                        <div style="padding: 0.4rem 0.6rem; background: #e6f4ea; font-size: 0.85rem; margin-bottom: 0.3rem;">
+                            <strong>${escapeHtml(e.object_key)}</strong>: ${escapeHtml(e.title)} (Resolved: ${escapeHtml(e.state)})
+                        </div>
+                    `).join('');
+                }
+
+                repContent.innerHTML = html;
+            } catch (e) {
+                repContent.innerHTML = `<p style="color: var(--color-red);">Error reopening investigation: ${escapeHtml(String(e))}</p>`;
+            }
+        }
+
+        async function deleteInvestigation(id) {
+            if (!confirm('Delete this investigation?')) return;
+            try {
+                await fetch(`/api/intelligence/investigations/${encodeURIComponent(id)}`, { method: 'DELETE' });
+                loadInvestigations();
+            } catch (e) {
+                alert('Error deleting: ' + e);
+            }
+        }
+
+        async function evaluateReadiness() {
+            const target = document.getElementById('readiness-target').value.trim();
+            if (!target) return;
+
+            const resDiv = document.getElementById('readiness-results');
+            resDiv.style.display = 'block';
+
+            try {
+                const resp = await fetch(`/api/intelligence/readiness?target=${encodeURIComponent(target)}`);
+                const data = await resp.json();
+
+                document.getElementById('readiness-score').innerText = Math.round(data.readiness_score) + '%';
+                const vElem = document.getElementById('readiness-verdict');
+                vElem.innerText = data.verdict;
+                if (data.verdict === 'READY') vElem.style.color = 'var(--color-green)';
+                else if (data.verdict === 'AT_RISK') vElem.style.color = 'var(--color-orange)';
+                else vElem.style.color = 'var(--color-red)';
+
+                document.getElementById('readiness-blockers').innerText = data.blockers.length;
+                document.getElementById('readiness-impl').innerText = Math.round(data.implementation_percentage) + '%';
+                document.getElementById('readiness-summary-text').innerText = data.summary;
+
+                const breakdown = document.getElementById('readiness-breakdown');
+                let html = '';
+                if (data.blockers.length > 0) {
+                    html += `<div style="font-size: 0.85rem; font-weight: 600; color: var(--color-red); margin-bottom: 0.3rem;">Active Blockers:</div>`;
+                    html += data.blockers.map(b => `<div style="padding: 0.3rem 0.6rem; background: #fce8e6; margin-bottom: 0.3rem; font-size: 0.85rem;">${escapeHtml(b)}</div>`).join('');
+                }
+                if (data.high_priority_issues.length > 0) {
+                    html += `<div style="font-size: 0.85rem; font-weight: 600; color: var(--color-orange); margin-top: 0.5rem; margin-bottom: 0.3rem;">High Priority Issues:</div>`;
+                    html += data.high_priority_issues.map(hp => `<div style="padding: 0.3rem 0.6rem; background: #fff3e0; margin-bottom: 0.3rem; font-size: 0.85rem;">${escapeHtml(hp)}</div>`).join('');
+                }
+                if (data.inconsistencies.length > 0) {
+                    html += `<div style="font-size: 0.85rem; font-weight: 600; color: var(--color-aubergine); margin-top: 0.5rem; margin-bottom: 0.3rem;">Tracker Contradictions:</div>`;
+                    html += data.inconsistencies.map(inc => `<div style="padding: 0.3rem 0.6rem; background: var(--color-warm-grey); margin-bottom: 0.3rem; font-size: 0.85rem;">${escapeHtml(inc)}</div>`).join('');
+                }
+                breakdown.innerHTML = html || '<p style="color: var(--color-muted-text);">No blockers or high-priority findings detected.</p>';
+            } catch (e) {
+                alert('Readiness assessment failed: ' + e);
+            }
+        }
+
+        async function loadMcpTools() {
+            const list = document.getElementById('mcp-tools-list');
+            try {
+                const resp = await fetch('/api/mcp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} })
+                });
+                const data = await resp.json();
+                const tools = data.result?.tools || [];
+
+                list.innerHTML = tools.map(t => `
+                    <div style="border: 1px solid var(--color-border-grey); padding: 1rem; border-radius: 3px;">
+                        <div style="font-weight: 600; font-family: var(--font-mono); color: var(--color-aubergine); font-size: 0.95rem; margin-bottom: 0.3rem;">${escapeHtml(t.name)}</div>
+                        <p style="font-size: 0.85rem; color: var(--color-muted-text);">${escapeHtml(t.description)}</p>
+                    </div>
+                `).join('');
+            } catch (e) {
+                list.innerHTML = `<p style="color: var(--color-red);">Error loading MCP tools: ${escapeHtml(String(e))}</p>`;
+            }
+        }
+
+        // On initial page load: handle URL query params if user clicked "Impact" or "Timeline" from search results
+        window.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const tab = urlParams.get('tab');
+            const key = urlParams.get('key');
+            if (tab) {
+                switchTab(tab);
+            }
+            if (key) {
+                if (tab === 'impact') {
+                    document.getElementById('impact-target-key').value = key;
+                    runImpactAnalysis();
+                } else if (tab === 'timeline') {
+                    document.getElementById('timeline-root-key').value = key;
+                    runTimeline();
+                } else if (tab === 'watchlists') {
+                    document.getElementById('diff-object-key').value = key;
+                    checkObjectHistory();
+                }
+            } else {
+                loadWatchlists();
+            }
+        });
+    </script>
+</body>
+</html>

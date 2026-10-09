@@ -1,7 +1,9 @@
 pub mod config;
 pub mod connectors;
+pub mod intelligence;
 pub mod introspection;
 pub mod jobs;
+pub mod mcp;
 pub mod model;
 pub mod paths;
 pub mod search;

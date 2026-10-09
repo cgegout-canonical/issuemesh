@@ -232,6 +232,7 @@ async fn test_introspection_evaluation_and_hard_failures() {
         relations_followed: vec![relation.clone()],
         stats: stats.clone(),
         answer: Some(answer1),
+        confidence: None,
         warnings: vec![],
     };
 

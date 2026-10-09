@@ -263,7 +263,27 @@ function renderStructuredResult(jobId, result) {
         </div>
     `;
 
-    // 2. Consistency Warnings / Discrepancies (SPEC.md §38)
+    // 2. Evidence-Based Confidence (Objective Metric)
+    if (result.confidence) {
+        const conf = result.confidence;
+        let badgeColor = 'var(--color-green)';
+        if (conf.level === 'Medium') badgeColor = 'var(--color-orange)';
+        if (conf.level === 'Low' || conf.level === 'Uncertain') badgeColor = 'var(--color-red)';
+
+        html += `
+            <div class="card" style="border-left: 4px solid ${badgeColor};">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                    <div class="card-title" style="margin: 0;">Evidence-Based Confidence: <span style="color: ${badgeColor};">${escapeHtml(conf.level)} (${Math.round(conf.score * 100)}%)</span></div>
+                    <span style="font-size: 0.8rem; color: var(--color-muted-text);">Objective Multi-Source Signal</span>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; color: var(--color-dark-text); margin-top: 0.5rem;">
+                    ${(conf.factors || []).map(f => `<div>&bull; ${escapeHtml(f)}</div>`).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    // 3. Consistency Warnings / Discrepancies (SPEC.md §38)
     if (result.findings && result.findings.length > 0) {
         html += `
             <div class="card" style="border-left: 4px solid var(--color-aubergine);">
@@ -286,7 +306,7 @@ function renderStructuredResult(jobId, result) {
         html += `</div></div>`;
     }
 
-    // 3. Ranked Evidence Cards listed below (SPEC.md §37, §38)
+    // 4. Ranked Evidence Cards listed below (SPEC.md §37, §38)
     const ranked = result.ranked_results || [];
     html += `
         <div style="margin-top: 1.5rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">
@@ -305,6 +325,7 @@ function renderStructuredResult(jobId, result) {
             const ev = item.evidence;
             const badgeClass = 'badge-' + ev.ref.source;
             const cardId = `evidence-${i}`;
+            const objKey = `${ev.ref.source}:${ev.ref.type}:${ev.ref.id}`;
 
             html += `
                 <div class="card" id="${cardId}">
@@ -334,10 +355,17 @@ function renderStructuredResult(jobId, result) {
                         </details>
                     ` : ''}
 
-                    <div style="margin-top: 0.75rem; display: flex; gap: 1rem; font-size: 0.8rem; color: var(--color-muted-text);">
-                        ${ev.author ? `<span>Author: <strong>${escapeHtml(ev.author)}</strong></span>` : ''}
-                        ${ev.container ? `<span>Container: <strong>${escapeHtml(ev.container)}</strong></span>` : ''}
-                        ${ev.updated_at ? `<span>Updated: <strong>${formatTime(ev.updated_at)}</strong></span>` : ''}
+                    <div style="margin-top: 0.75rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                        <div style="display: flex; gap: 1rem; font-size: 0.8rem; color: var(--color-muted-text);">
+                            ${ev.author ? `<span>Author: <strong>${escapeHtml(ev.author)}</strong></span>` : ''}
+                            ${ev.container ? `<span>Container: <strong>${escapeHtml(ev.container)}</strong></span>` : ''}
+                            ${ev.updated_at ? `<span>Updated: <strong>${formatTime(ev.updated_at)}</strong></span>` : ''}
+                        </div>
+                        <div style="display: flex; gap: 0.4rem;">
+                            <a href="/intelligence?tab=impact&key=${encodeURIComponent(objKey)}" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.2rem 0.5rem; text-decoration: none;">Impact</a>
+                            <a href="/intelligence?tab=timeline&key=${encodeURIComponent(objKey)}" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.2rem 0.5rem; text-decoration: none;">Timeline</a>
+                            <a href="/intelligence?tab=watchlists&key=${encodeURIComponent(objKey)}" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.2rem 0.5rem; text-decoration: none;">Diffs</a>
+                        </div>
                     </div>
                 </div>
             `;

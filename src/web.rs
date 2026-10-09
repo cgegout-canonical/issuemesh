@@ -36,8 +36,44 @@ pub fn build_router(state: AppState) -> Router {
             get(about_introspection_page_handler),
         )
         .route("/tutorial", get(tutorial_page_handler))
+        .route("/intelligence", get(intelligence_page_handler))
         .route("/search/{id}/run", get(search_run_page_handler))
         // API routes
+        .route(
+            "/api/mcp",
+            post(crate::mcp::mcp_http_handler).get(crate::mcp::mcp_info_handler),
+        )
+        .route(
+            "/api/intelligence/watchlists",
+            get(list_watchlists_handler).post(create_watchlist_handler),
+        )
+        .route(
+            "/api/intelligence/watchlists/{id}",
+            get(get_watchlist_handler).delete(delete_watchlist_handler),
+        )
+        .route(
+            "/api/intelligence/watchlists/{id}/check",
+            post(check_watchlist_handler),
+        )
+        .route("/api/intelligence/what-changed", get(what_changed_handler))
+        .route("/api/intelligence/impact", get(impact_analysis_handler))
+        .route("/api/intelligence/risk", get(risk_radar_handler))
+        .route("/api/intelligence/timeline", get(timeline_handler))
+        .route("/api/intelligence/gaps", get(gaps_handler))
+        .route(
+            "/api/intelligence/investigations",
+            get(list_investigations_handler).post(save_investigation_handler),
+        )
+        .route(
+            "/api/intelligence/investigations/{id}",
+            get(get_investigation_handler).delete(delete_investigation_handler),
+        )
+        .route(
+            "/api/intelligence/investigations/{id}/reopen",
+            post(reopen_investigation_handler),
+        )
+        .route("/api/intelligence/readiness", get(readiness_handler))
+        .route("/api/intelligence/diff", post(diff_evidence_handler))
         .route("/api/health", get(health_api_handler))
         .route("/api/stats", get(stats_handler))
         .route("/api/introspection", get(get_introspection_handler))
@@ -1540,4 +1576,321 @@ async fn get_models_handler(
     .await;
 
     Json(result).into_response()
+}
+
+// ----------------------------------------------------------------------------
+// Intelligence & MCP Handlers
+// ----------------------------------------------------------------------------
+
+async fn intelligence_page_handler() -> impl IntoResponse {
+    match Assets::get("intelligence.html") {
+        Some(content) => Html(content.data).into_response(),
+        None => (StatusCode::NOT_FOUND, "intelligence.html not found").into_response(),
+    }
+}
+
+async fn list_watchlists_handler(State(state): State<Arc<AppState>>) -> Response {
+    let service = crate::intelligence::WatchlistService::new(state.store.clone());
+    match service.list_watchlists().await {
+        Ok(list) => Json(list).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn create_watchlist_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<crate::intelligence::CreateWatchlistRequest>,
+) -> Response {
+    let service = crate::intelligence::WatchlistService::new(state.store.clone());
+    match service.create_watchlist(payload).await {
+        Ok(rec) => (StatusCode::CREATED, Json(rec)).into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_watchlist_handler(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    let service = crate::intelligence::WatchlistService::new(state.store.clone());
+    match service.get_watchlist(&id).await {
+        Ok(Some(rec)) => Json(rec).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Watchlist not found" })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn delete_watchlist_handler(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    let service = crate::intelligence::WatchlistService::new(state.store.clone());
+    match service.delete_watchlist(&id).await {
+        Ok(deleted) => Json(serde_json::json!({ "deleted": deleted, "id": id })).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn check_watchlist_handler(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    let service = crate::intelligence::WatchlistService::new(state.store.clone());
+    match service.check_watchlist(&id).await {
+        Ok(report) => Json(report).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct KeyQuery {
+    pub key: Option<String>,
+    pub depth: Option<usize>,
+}
+
+async fn what_changed_handler(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<KeyQuery>,
+) -> Response {
+    let key = match query.key {
+        Some(k) if !k.trim().is_empty() => k,
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": "Missing 'key' query parameter" })),
+            )
+                .into_response();
+        }
+    };
+    let service = crate::intelligence::WatchlistService::new(state.store.clone());
+    match service.what_changed_for_object(&key).await {
+        Ok(report) => Json(report).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn impact_analysis_handler(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<KeyQuery>,
+) -> Response {
+    let key = match query.key {
+        Some(k) if !k.trim().is_empty() => k,
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": "Missing 'key' query parameter" })),
+            )
+                .into_response();
+        }
+    };
+    let analyzer = crate::intelligence::ImpactAnalyzer::new(state.store.clone());
+    match analyzer.analyze_impact(&key).await {
+        Ok(report) => Json(report).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn risk_radar_handler(State(state): State<Arc<AppState>>) -> Response {
+    let radar = crate::intelligence::RiskRadar::new(state.store.clone());
+    match radar.scan().await {
+        Ok(report) => Json(report).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn timeline_handler(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<KeyQuery>,
+) -> Response {
+    let key = match query.key {
+        Some(k) if !k.trim().is_empty() => k,
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": "Missing 'key' query parameter" })),
+            )
+                .into_response();
+        }
+    };
+    let reconstructor = crate::intelligence::StoryReconstructor::new(state.store.clone());
+    match reconstructor.reconstruct_timeline(&key).await {
+        Ok(report) => Json(report).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn gaps_handler(State(state): State<Arc<AppState>>) -> Response {
+    let detector = crate::intelligence::GapDetector::new(state.store.clone());
+    match detector.detect_gaps().await {
+        Ok(report) => Json(report).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn list_investigations_handler(State(state): State<Arc<AppState>>) -> Response {
+    let mgr = crate::intelligence::InvestigationManager::new(state.store.clone());
+    match mgr.list().await {
+        Ok(list) => Json(list).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn save_investigation_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<crate::intelligence::SaveInvestigationRequest>,
+) -> Response {
+    let mgr = crate::intelligence::InvestigationManager::new(state.store.clone());
+    match mgr.save(payload).await {
+        Ok(rec) => (StatusCode::CREATED, Json(rec)).into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_investigation_handler(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    let mgr = crate::intelligence::InvestigationManager::new(state.store.clone());
+    match mgr.get(&id).await {
+        Ok(Some(rec)) => Json(rec).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Investigation not found" })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn delete_investigation_handler(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    let mgr = crate::intelligence::InvestigationManager::new(state.store.clone());
+    match mgr.delete(&id).await {
+        Ok(deleted) => Json(serde_json::json!({ "deleted": deleted, "id": id })).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn reopen_investigation_handler(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    let mgr = crate::intelligence::InvestigationManager::new(state.store.clone());
+    match mgr.reopen(&id).await {
+        Ok(report) => Json(report).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReadinessQuery {
+    pub container: Option<String>,
+    pub topic: Option<String>,
+}
+
+async fn readiness_handler(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<ReadinessQuery>,
+) -> Response {
+    let target = query
+        .container
+        .or(query.topic)
+        .unwrap_or_else(|| "all".to_string());
+    let evaluator = crate::intelligence::ReadinessEvaluator::new(state.store.clone());
+    match evaluator.assess_readiness(&target).await {
+        Ok(assessment) => Json(assessment).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DiffRequest {
+    pub previous: Vec<crate::intelligence::diff::EvidenceSnapshotItem>,
+    pub current_keys: Vec<String>,
+}
+
+async fn diff_evidence_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<DiffRequest>,
+) -> Response {
+    let mut current_evs = Vec::new();
+    for k in &payload.current_keys {
+        let oref = crate::connectors::ObjectRef::from_key(k)
+            .unwrap_or_else(|| crate::connectors::ObjectRef::new("unknown", "unknown", k));
+        if let Ok(Some(ev)) = state.store.get_object(&oref).await {
+            current_evs.push(ev);
+        }
+    }
+    let diff = crate::intelligence::diff::diff_evidence_snapshots(&payload.previous, &current_evs);
+    Json(diff).into_response()
 }

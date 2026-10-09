@@ -18,6 +18,9 @@ use issuemesh::AppState;
     about = "Local engineering issue intelligence across GitHub, Jira and Launchpad"
 )]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+
     /// Port to listen on (default: 8765)
     #[arg(long)]
     port: Option<u16>,
@@ -35,12 +38,19 @@ struct Cli {
     config: Option<PathBuf>,
 }
 
+#[derive(clap::Subcommand, Debug)]
+enum Commands {
+    /// Run Model Context Protocol (MCP) server over standard I/O (stdio)
+    Mcp,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Set up tracing / logging
+    // Set up tracing / logging to stderr
     tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
@@ -54,16 +64,6 @@ async fn main() -> Result<()> {
     let secrets = Secrets::load_from_file(&paths.secrets_file)?;
     let store = Store::open(&paths.db_file)?;
 
-    let bind_addr = cli.bind.unwrap_or_else(|| config.server.bind.clone());
-    let port = cli.port.unwrap_or(config.server.port);
-
-    if bind_addr != "127.0.0.1" && bind_addr != "localhost" {
-        eprintln!(
-            "WARNING: Binding to {} exposes IssueMesh to the network. IssueMesh is intended for local use.",
-            bind_addr
-        );
-    }
-
     let app_state = AppState {
         paths: paths.clone(),
         config: Arc::new(RwLock::new(config.clone())),
@@ -73,6 +73,21 @@ async fn main() -> Result<()> {
         introspection: issuemesh::introspection::IntrospectionScheduler::new(),
         search_results: Arc::new(RwLock::new(std::collections::HashMap::new())),
     };
+
+    // If MCP subcommand is invoked, run stdio server and exit
+    if let Some(Commands::Mcp) = cli.command {
+        return issuemesh::mcp::run_stdio_server(Arc::new(app_state)).await;
+    }
+
+    let bind_addr = cli.bind.unwrap_or_else(|| config.server.bind.clone());
+    let port = cli.port.unwrap_or(config.server.port);
+
+    if bind_addr != "127.0.0.1" && bind_addr != "localhost" {
+        eprintln!(
+            "WARNING: Binding to {} exposes IssueMesh to the network. IssueMesh is intended for local use.",
+            bind_addr
+        );
+    }
 
     // Start background introspection scheduler if enabled
     app_state.introspection.start(Arc::new(app_state.clone()));

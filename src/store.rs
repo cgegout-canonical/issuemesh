@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tokio::task;
 
-const CURRENT_SCHEMA_VERSION: i64 = 2;
+pub const CURRENT_SCHEMA_VERSION: i64 = 3;
 
 pub const MIGRATION_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -155,6 +155,37 @@ CREATE INDEX IF NOT EXISTS idx_introspection_runs_fingerprint ON introspection_r
 CREATE INDEX IF NOT EXISTS idx_introspection_runs_result ON introspection_runs(result);
 "#;
 
+pub const MIGRATION_V3: &str = r#"
+CREATE TABLE IF NOT EXISTS watchlists (
+    id TEXT PRIMARY KEY,
+    target_type TEXT NOT NULL,
+    target_value TEXT NOT NULL,
+    title TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_checked_at TEXT,
+    last_snapshot_json TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_watchlists_target_type ON watchlists(target_type);
+CREATE INDEX IF NOT EXISTS idx_watchlists_target_value ON watchlists(target_value);
+
+CREATE TABLE IF NOT EXISTS saved_investigations (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    query TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    conclusions_markdown TEXT NOT NULL,
+    evidence_keys_json TEXT NOT NULL,
+    snapshot_json TEXT NOT NULL,
+    last_reopened_at TEXT,
+    tags TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_saved_investigations_created_at ON saved_investigations(created_at);
+CREATE INDEX IF NOT EXISTS idx_saved_investigations_title ON saved_investigations(title);
+"#;
+
 #[derive(Clone)]
 pub struct Store {
     conn: Arc<Mutex<Connection>>,
@@ -222,9 +253,20 @@ impl Store {
                 .context("Failed to apply migration v2")?;
             conn.execute(
                 "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?1, ?2)",
-                rusqlite::params![CURRENT_SCHEMA_VERSION, now],
+                rusqlite::params![2, now],
             )
             .context("Failed to record schema version 2")?;
+        }
+
+        if current_version < 3 {
+            let now = chrono::Utc::now().to_rfc3339();
+            conn.execute_batch(MIGRATION_V3)
+                .context("Failed to apply migration v3")?;
+            conn.execute(
+                "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?1, ?2)",
+                rusqlite::params![CURRENT_SCHEMA_VERSION, now],
+            )
+            .context("Failed to record schema version 3")?;
         }
 
         Ok(())
@@ -1855,6 +1897,422 @@ impl Store {
         })
         .await
     }
+
+    pub async fn get_revisions_for_key(&self, key: &str) -> Result<Vec<RevisionRecord>> {
+        let k = key.to_string();
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, object_key, content_hash, captured_at, title, snippet, body, state, native_json
+                 FROM revisions WHERE object_key = ?1 ORDER BY captured_at ASC, id ASC",
+            )?;
+            let rows = stmt.query_map(rusqlite::params![&k], |row| {
+                Ok(RevisionRecord {
+                    id: row.get(0)?,
+                    object_key: row.get(1)?,
+                    content_hash: row.get(2)?,
+                    captured_at: row.get(3)?,
+                    title: row.get(4)?,
+                    snippet: row.get(5)?,
+                    body: row.get(6)?,
+                    state: row.get(7)?,
+                    native_json: row.get(8)?,
+                })
+            })?;
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    pub async fn get_all_revisions(&self, limit: usize) -> Result<Vec<RevisionRecord>> {
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, object_key, content_hash, captured_at, title, snippet, body, state, native_json
+                 FROM revisions ORDER BY captured_at DESC LIMIT ?1",
+            )?;
+            let rows = stmt.query_map(rusqlite::params![limit as i64], |row| {
+                Ok(RevisionRecord {
+                    id: row.get(0)?,
+                    object_key: row.get(1)?,
+                    content_hash: row.get(2)?,
+                    captured_at: row.get(3)?,
+                    title: row.get(4)?,
+                    snippet: row.get(5)?,
+                    body: row.get(6)?,
+                    state: row.get(7)?,
+                    native_json: row.get(8)?,
+                })
+            })?;
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    pub async fn get_all_objects(&self) -> Result<Vec<crate::connectors::Evidence>> {
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT object_key, source, object_type, external_id,
+                        title, snippet, body, url, container, author,
+                        state, created_at, updated_at, native_json
+                 FROM objects ORDER BY updated_at DESC",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                let obj_key: String = row.get(0)?;
+                let source: String = row.get(1)?;
+                let object_type: String = row.get(2)?;
+                let external_id: String = row.get(3)?;
+                let title: String = row.get(4)?;
+                let snippet: String = row.get(5)?;
+                let body: Option<String> = row.get(6)?;
+                let url: String = row.get(7)?;
+                let container: String = row.get(8)?;
+                let author: String = row.get(9)?;
+                let state: String = row.get(10)?;
+                let created_at: Option<String> = row.get(11)?;
+                let updated_at: Option<String> = row.get(12)?;
+                let native_str: String = row.get(13)?;
+                let native = serde_json::from_str(&native_str).unwrap_or_default();
+
+                let obj_ref =
+                    crate::connectors::ObjectRef::from_key(&obj_key).unwrap_or_else(|| {
+                        crate::connectors::ObjectRef::new(source, object_type, external_id)
+                    });
+
+                Ok(crate::connectors::Evidence {
+                    r#ref: obj_ref,
+                    title,
+                    snippet,
+                    body,
+                    url,
+                    container,
+                    author,
+                    created_at,
+                    updated_at,
+                    state,
+                    native,
+                })
+            })?;
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    pub async fn get_objects_by_container(
+        &self,
+        container: &str,
+    ) -> Result<Vec<crate::connectors::Evidence>> {
+        let c = container.to_string();
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT object_key, source, object_type, external_id,
+                        title, snippet, body, url, container, author,
+                        state, created_at, updated_at, native_json
+                 FROM objects WHERE container = ?1 ORDER BY updated_at DESC",
+            )?;
+            let rows = stmt.query_map(rusqlite::params![&c], |row| {
+                let obj_key: String = row.get(0)?;
+                let source: String = row.get(1)?;
+                let object_type: String = row.get(2)?;
+                let external_id: String = row.get(3)?;
+                let title: String = row.get(4)?;
+                let snippet: String = row.get(5)?;
+                let body: Option<String> = row.get(6)?;
+                let url: String = row.get(7)?;
+                let container: String = row.get(8)?;
+                let author: String = row.get(9)?;
+                let state: String = row.get(10)?;
+                let created_at: Option<String> = row.get(11)?;
+                let updated_at: Option<String> = row.get(12)?;
+                let native_str: String = row.get(13)?;
+                let native = serde_json::from_str(&native_str).unwrap_or_default();
+
+                let obj_ref =
+                    crate::connectors::ObjectRef::from_key(&obj_key).unwrap_or_else(|| {
+                        crate::connectors::ObjectRef::new(source, object_type, external_id)
+                    });
+
+                Ok(crate::connectors::Evidence {
+                    r#ref: obj_ref,
+                    title,
+                    snippet,
+                    body,
+                    url,
+                    container,
+                    author,
+                    created_at,
+                    updated_at,
+                    state,
+                    native,
+                })
+            })?;
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    pub async fn get_all_relations(&self) -> Result<Vec<crate::connectors::Relation>> {
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT from_key, to_key, relation_type, detected_by, confidence FROM relations",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                let from_k: String = row.get(0)?;
+                let to_k: String = row.get(1)?;
+                let relation_type: String = row.get(2)?;
+                let detected_by: String = row.get(3)?;
+                let confidence: f64 = row.get(4)?;
+
+                let from = crate::connectors::ObjectRef::from_key(&from_k).unwrap_or_else(|| {
+                    crate::connectors::ObjectRef::new("unknown", "unknown", &from_k)
+                });
+                let to = crate::connectors::ObjectRef::from_key(&to_k).unwrap_or_else(|| {
+                    crate::connectors::ObjectRef::new("unknown", "unknown", &to_k)
+                });
+
+                Ok(crate::connectors::Relation {
+                    from,
+                    to,
+                    relation_type,
+                    detected_by,
+                    confidence: confidence as f32,
+                })
+            })?;
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    // Watchlists
+    pub async fn save_watchlist(&self, item: WatchlistRecord) -> Result<()> {
+        self.call(move |conn| {
+            conn.execute(
+                "INSERT OR REPLACE INTO watchlists (id, target_type, target_value, title, created_at, last_checked_at, last_snapshot_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![
+                    item.id,
+                    item.target_type,
+                    item.target_value,
+                    item.title,
+                    item.created_at,
+                    item.last_checked_at,
+                    item.last_snapshot_json,
+                ],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    pub async fn get_watchlist(&self, id: &str) -> Result<Option<WatchlistRecord>> {
+        let id_str = id.to_string();
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, target_type, target_value, title, created_at, last_checked_at, last_snapshot_json
+                 FROM watchlists WHERE id = ?1",
+            )?;
+            let res = stmt.query_row(rusqlite::params![&id_str], |row| {
+                Ok(WatchlistRecord {
+                    id: row.get(0)?,
+                    target_type: row.get(1)?,
+                    target_value: row.get(2)?,
+                    title: row.get(3)?,
+                    created_at: row.get(4)?,
+                    last_checked_at: row.get(5)?,
+                    last_snapshot_json: row.get(6)?,
+                })
+            });
+            match res {
+                Ok(w) => Ok(Some(w)),
+                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                Err(e) => Err(anyhow::anyhow!(e)),
+            }
+        })
+        .await
+    }
+
+    pub async fn list_watchlists(&self) -> Result<Vec<WatchlistRecord>> {
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, target_type, target_value, title, created_at, last_checked_at, last_snapshot_json
+                 FROM watchlists ORDER BY created_at DESC",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok(WatchlistRecord {
+                    id: row.get(0)?,
+                    target_type: row.get(1)?,
+                    target_value: row.get(2)?,
+                    title: row.get(3)?,
+                    created_at: row.get(4)?,
+                    last_checked_at: row.get(5)?,
+                    last_snapshot_json: row.get(6)?,
+                })
+            })?;
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    pub async fn delete_watchlist(&self, id: &str) -> Result<bool> {
+        let id_str = id.to_string();
+        self.call(move |conn| {
+            let n = conn.execute(
+                "DELETE FROM watchlists WHERE id = ?1",
+                rusqlite::params![&id_str],
+            )?;
+            Ok(n > 0)
+        })
+        .await
+    }
+
+    pub async fn update_watchlist_snapshot(
+        &self,
+        id: &str,
+        snapshot_json: &str,
+        last_checked_at: &str,
+    ) -> Result<()> {
+        let id_str = id.to_string();
+        let snap = snapshot_json.to_string();
+        let checked = last_checked_at.to_string();
+        self.call(move |conn| {
+            conn.execute(
+                "UPDATE watchlists SET last_snapshot_json = ?1, last_checked_at = ?2 WHERE id = ?3",
+                rusqlite::params![snap, checked, id_str],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    // Saved Investigations
+    pub async fn save_investigation(&self, item: SavedInvestigationRecord) -> Result<()> {
+        self.call(move |conn| {
+            conn.execute(
+                "INSERT OR REPLACE INTO saved_investigations (id, title, query, created_at, updated_at, conclusions_markdown, evidence_keys_json, snapshot_json, last_reopened_at, tags)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                rusqlite::params![
+                    item.id,
+                    item.title,
+                    item.query,
+                    item.created_at,
+                    item.updated_at,
+                    item.conclusions_markdown,
+                    item.evidence_keys_json,
+                    item.snapshot_json,
+                    item.last_reopened_at,
+                    item.tags,
+                ],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    pub async fn get_investigation(&self, id: &str) -> Result<Option<SavedInvestigationRecord>> {
+        let id_str = id.to_string();
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, title, query, created_at, updated_at, conclusions_markdown, evidence_keys_json, snapshot_json, last_reopened_at, tags
+                 FROM saved_investigations WHERE id = ?1",
+            )?;
+            let res = stmt.query_row(rusqlite::params![&id_str], |row| {
+                Ok(SavedInvestigationRecord {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    query: row.get(2)?,
+                    created_at: row.get(3)?,
+                    updated_at: row.get(4)?,
+                    conclusions_markdown: row.get(5)?,
+                    evidence_keys_json: row.get(6)?,
+                    snapshot_json: row.get(7)?,
+                    last_reopened_at: row.get(8)?,
+                    tags: row.get(9)?,
+                })
+            });
+            match res {
+                Ok(inv) => Ok(Some(inv)),
+                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                Err(e) => Err(anyhow::anyhow!(e)),
+            }
+        })
+        .await
+    }
+
+    pub async fn list_investigations(&self) -> Result<Vec<SavedInvestigationRecord>> {
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, title, query, created_at, updated_at, conclusions_markdown, evidence_keys_json, snapshot_json, last_reopened_at, tags
+                 FROM saved_investigations ORDER BY updated_at DESC",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok(SavedInvestigationRecord {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    query: row.get(2)?,
+                    created_at: row.get(3)?,
+                    updated_at: row.get(4)?,
+                    conclusions_markdown: row.get(5)?,
+                    evidence_keys_json: row.get(6)?,
+                    snapshot_json: row.get(7)?,
+                    last_reopened_at: row.get(8)?,
+                    tags: row.get(9)?,
+                })
+            })?;
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    pub async fn delete_investigation(&self, id: &str) -> Result<bool> {
+        let id_str = id.to_string();
+        self.call(move |conn| {
+            let n = conn.execute(
+                "DELETE FROM saved_investigations WHERE id = ?1",
+                rusqlite::params![&id_str],
+            )?;
+            Ok(n > 0)
+        })
+        .await
+    }
+
+    pub async fn update_investigation_reopened(&self, id: &str, reopened_at: &str) -> Result<()> {
+        let id_str = id.to_string();
+        let reopened = reopened_at.to_string();
+        self.call(move |conn| {
+            conn.execute(
+                "UPDATE saved_investigations SET last_reopened_at = ?1 WHERE id = ?2",
+                rusqlite::params![reopened, id_str],
+            )?;
+            Ok(())
+        })
+        .await
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -2008,6 +2466,44 @@ pub struct IntrospectionDailyBucket {
     pub pass_count: u32,
     pub weak_count: u32,
     pub fail_count: u32,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RevisionRecord {
+    pub id: i64,
+    pub object_key: String,
+    pub content_hash: String,
+    pub captured_at: String,
+    pub title: String,
+    pub snippet: String,
+    pub body: Option<String>,
+    pub state: String,
+    pub native_json: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct WatchlistRecord {
+    pub id: String,
+    pub target_type: String,
+    pub target_value: String,
+    pub title: String,
+    pub created_at: String,
+    pub last_checked_at: Option<String>,
+    pub last_snapshot_json: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SavedInvestigationRecord {
+    pub id: String,
+    pub title: String,
+    pub query: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub conclusions_markdown: String,
+    pub evidence_keys_json: String,
+    pub snapshot_json: String,
+    pub last_reopened_at: Option<String>,
+    pub tags: Option<String>,
 }
 
 #[cfg(test)]
