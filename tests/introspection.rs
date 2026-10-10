@@ -50,10 +50,11 @@ async fn test_introspection_store_crud_and_stats() {
     assert_eq!(stats0.total_count, 0);
     assert_eq!(stats0.pass_count, 0);
 
+    let now_str = chrono::Utc::now().to_rfc3339();
     // Save a PASS run
     let run1 = IntrospectionRunRecord {
         id: "intro-test-1".to_string(),
-        created_at: "2026-10-09T10:00:00Z".to_string(),
+        created_at: now_str.clone(),
         question: "Is OPEN-4679 still blocked?".to_string(),
         question_fingerprint: "fp123456".to_string(),
         trigger_reason: "unresolved_ref".to_string(),
@@ -78,7 +79,7 @@ async fn test_introspection_store_crud_and_stats() {
     // Save a WEAK run
     let run2 = IntrospectionRunRecord {
         id: "intro-test-2".to_string(),
-        created_at: "2026-10-09T11:00:00Z".to_string(),
+        created_at: now_str,
         question: "What is the status of LP#2167315?".to_string(),
         question_fingerprint: "fp789012".to_string(),
         trigger_reason: "stale_object".to_string(),
