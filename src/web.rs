@@ -1852,6 +1852,7 @@ async fn reopen_investigation_handler(
 pub struct ReadinessQuery {
     pub container: Option<String>,
     pub topic: Option<String>,
+    pub target: Option<String>,
 }
 
 async fn readiness_handler(
@@ -1859,7 +1860,8 @@ async fn readiness_handler(
     Query(query): Query<ReadinessQuery>,
 ) -> Response {
     let target = query
-        .container
+        .target
+        .or(query.container)
         .or(query.topic)
         .unwrap_or_else(|| "all".to_string());
     let evaluator = crate::intelligence::ReadinessEvaluator::new(state.store.clone());
