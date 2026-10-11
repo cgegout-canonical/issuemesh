@@ -286,8 +286,8 @@ function renderStructuredResult(jobId, result) {
     // 3. Consistency Warnings / Discrepancies (SPEC.md §38)
     if (result.findings && result.findings.length > 0) {
         html += `
-            <div class="card" style="border-left: 4px solid var(--color-aubergine);">
-                <div class="card-title" style="color: var(--color-aubergine);">Consistency & Workflow Findings (${result.findings.length})</div>
+            <div class="card" style="border-left: 4px solid var(--color-slate);">
+                <div class="card-title" style="color: var(--color-slate);">Consistency & Workflow Findings (${result.findings.length})</div>
                 <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
         `;
         for (const f of result.findings) {

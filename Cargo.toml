@@ -1,6 +1,6 @@
 [package]
 name = "issuemesh"
-version = "0.2.9"
+version = "1.0.0"
 edition = "2021"
 description = "Local engineering issue intelligence across GitHub, Jira and Launchpad"
 authors = ["Cedric Gegout <cedric.gegout@canonical.com>"]

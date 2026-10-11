@@ -71,7 +71,7 @@
                         const lastSucc = probe.last_successful ? new Date(probe.last_successful).toLocaleString() : 'None yet';
                         const nextExp = probe.next_expected ? new Date(probe.next_expected).toLocaleString() : (probe.enabled ? 'Quota reached or pending' : 'Disabled');
                         html += `
-                            <div class="card" style="border-top: 3px solid var(--color-aubergine);">
+                            <div class="card" style="border-top: 3px solid var(--color-slate);">
                                 <div class="probe-header">
                                     <h3 style="font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem;">
                                         Introspection Engine

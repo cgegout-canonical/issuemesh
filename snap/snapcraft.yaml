@@ -1,6 +1,6 @@
 name: issuemesh
 base: core24
-version: '0.2.8'
+version: '1.0.0'
 summary: Autonomous multi-tracker issue intelligence engine
 description: |
   IssueMesh is an autonomous local-first issue intelligence engine that

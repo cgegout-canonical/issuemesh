@@ -782,7 +782,7 @@
                     </div>
                     <div style="font-weight: 500; font-size: 0.95rem; margin-bottom: 0.3rem;">${escapeHtml(r.title)}</div>
                     <div style="font-size: 0.85rem; color: var(--color-muted-text); margin-bottom: 0.4rem;">${escapeHtml(r.explanation)}</div>
-                    <div style="font-size: 0.85rem; color: var(--color-aubergine); font-style: italic;">
+                    <div style="font-size: 0.85rem; color: var(--color-slate); font-style: italic;">
                         <strong>Remediation:</strong> ${escapeHtml(r.remediation)}
                     </div>
                 </div>
@@ -929,7 +929,7 @@
                 const data = await resp.json();
                 
                 let html = `<div style="font-weight: 600; font-size: 1.05rem; margin-bottom: 0.5rem;">${escapeHtml(data.investigation.title)}</div>`;
-                html += `<div style="font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--color-aubergine); font-weight: 500;">${escapeHtml(data.updated_conclusions_guidance)}</div>`;
+                html += `<div style="font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--color-slate); font-weight: 500;">${escapeHtml(data.updated_conclusions_guidance)}</div>`;
 
                 if (data.deltas.changed_evidence.length > 0) {
                     html += `<div style="font-size: 0.85rem; font-weight: 600; color: var(--color-orange); margin-bottom: 0.3rem;">Changed Evidence (${data.deltas.changed_evidence.length}):</div>`;
@@ -998,7 +998,7 @@
                     html += data.high_priority_issues.map(hp => `<div style="padding: 0.3rem 0.6rem; background: #fff3e0; margin-bottom: 0.3rem; font-size: 0.85rem;">${escapeHtml(hp)}</div>`).join('');
                 }
                 if (data.inconsistencies.length > 0) {
-                    html += `<div style="font-size: 0.85rem; font-weight: 600; color: var(--color-aubergine); margin-top: 0.5rem; margin-bottom: 0.3rem;">Tracker Contradictions:</div>`;
+                    html += `<div style="font-size: 0.85rem; font-weight: 600; color: var(--color-slate); margin-top: 0.5rem; margin-bottom: 0.3rem;">Tracker Contradictions:</div>`;
                     html += data.inconsistencies.map(inc => `<div style="padding: 0.3rem 0.6rem; background: var(--color-warm-grey); margin-bottom: 0.3rem; font-size: 0.85rem;">${escapeHtml(inc)}</div>`).join('');
                 }
                 breakdown.innerHTML = html || '<p style="color: var(--color-muted-text);">No blockers or high-priority findings detected.</p>';
@@ -1020,7 +1020,7 @@
 
                 list.innerHTML = tools.map(t => `
                     <div style="border: 1px solid var(--color-border-grey); padding: 1rem; border-radius: 3px;">
-                        <div style="font-weight: 600; font-family: var(--font-mono); color: var(--color-aubergine); font-size: 0.95rem; margin-bottom: 0.3rem;">${escapeHtml(t.name)}</div>
+                        <div style="font-weight: 600; font-family: var(--font-mono); color: var(--color-slate); font-size: 0.95rem; margin-bottom: 0.3rem;">${escapeHtml(t.name)}</div>
                         <p style="font-size: 0.85rem; color: var(--color-muted-text);">${escapeHtml(t.description)}</p>
                     </div>
                 `).join('');

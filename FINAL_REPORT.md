@@ -90,7 +90,7 @@ Every acceptance requirement is satisfied and verified by automated tests and in
 
 ### UI
 - [x] **Canonical-inspired branding & clean terminal/search feel**
-  - **Proof**: Authored in `static/css/styles.css` using Canonical palette (Aubergine `#77216F`, Orange `#E95420`, warm greys).
+  - **Proof**: Authored in `static/css/styles.css` using Canonical palette (Canonical Slate `#111111`, Orange `#E95420`, warm greys). Zero aubergine tones.
 - [x] **Responsive design**
   - **Proof**: Mobile-first flexbox and grid layouts.
 - [x] **Animated search progress**

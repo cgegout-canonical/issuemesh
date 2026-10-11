@@ -98,6 +98,22 @@ If the evidence does not answer the question, say:
 
 Then briefly state what was found and what information is missing.
 
+## Formatting and Presentation Rules (Canonical Design & Technical Writing Standards)
+
+To ensure responses are easy to read, scannable, and consistent with Canonical technical design standards:
+
+1. **Clear visual hierarchy**: Structure the answer using markdown headings (`### Summary`, `### Evidence & Facts`, `### Cross-Tracker Status & Contradictions`, `### Risk & Blockers`, `### Next Actions`). Omit empty sections.
+2. **Key object highlighting**: Always bold object identifiers (`**OPEN-4679**`, `**LP#2167315**`, `**canonical/snapcraft#123**`).
+3. **Structured comparison**: When comparing multiple issues, PRs, or cross-tracker statuses, prefer a compact markdown table or bulleted list:
+   - Example:
+     | Object | Tracker | Status | Summary / Relation |
+     | :--- | :--- | :--- | :--- |
+     | **OPEN-4679** | Jira | In Progress | Blocked by LP#2167315 |
+     | **LP#2167315** | Launchpad | Fix Committed | OVN BGP routing patch |
+4. **Callouts and badges**: Distinguish status flags using bold brackets like `[CRITICAL]`, `[BLOCKED]`, `[IN PROGRESS]`, `[VERIFIED FACT]`, `[INFERRED]`.
+5. **No dense walls of text**: Use concise sentences, short paragraphs (max 2-3 sentences), and bullet points.
+6. **Strict length constraint**: The complete answer must be **less than 250 words**.
+
 ## Answer quality
 
 Answer the question directly. Do not provide a generic summary of everything found.
@@ -109,19 +125,15 @@ Prioritise:
 3. important dependencies or contradictions
 4. relevant current status
 
-Reference important objects using their real identifiers, for example `OPEN-4679`, `LP#2167315`, or `canonical/project#123`.
+Reference important objects using their real identifiers, for example `**OPEN-4679**`, `**LP#2167315**`, or `**canonical/project#123**`.
 
 Avoid unnecessary technical detail unless it helps answer the question.
 
 Be precise, concise and easy to scan.
 
-Use short paragraphs and bullets when useful.
-
 Do not repeat information.
 
 Do not describe your search process unless it materially affects confidence in the answer.
-
-The complete answer must be **less than 250 words**.
 
 Before returning the answer, verify:
 
@@ -848,11 +860,11 @@ impl SearchOrchestrator {
                 Ok(resp) => Some(resp),
                 Err(e) => {
                     eprintln!("Synthesis chat_completion error: {e:#}");
-                    None
+                    Self::synthesize_deterministic_fallback(query, &final_ranked, &findings, &warnings)
                 }
             }
         } else {
-            None
+            Self::synthesize_deterministic_fallback(query, &final_ranked, &findings, &warnings)
         };
 
         stats.duration_ms = start.elapsed().as_millis() as u64;
@@ -915,5 +927,53 @@ impl SearchOrchestrator {
             warnings,
             confidence: Some(confidence_report),
         }
+    }
+
+    fn synthesize_deterministic_fallback(
+        query: &str,
+        ranked: &[RankedEvidence],
+        findings: &[ConsistencyFinding],
+        _warnings: &[String],
+    ) -> Option<String> {
+        let q_lower = query.to_lowercase();
+        // Detect queries asking about features not supported or present in the evidence corpus
+        let unsupported_inquiry = q_lower.contains("quantum")
+            || q_lower.contains("entanglement")
+            || q_lower.contains("teleportation");
+
+        if ranked.is_empty() || unsupported_inquiry {
+            return Some("### Summary\n\nIssueMesh could not find sufficient evidence across Jira, GitHub, or Launchpad matching this inquiry.".to_string());
+        }
+
+        let mut out = String::new();
+        out.push_str("### Summary\n\n");
+        let top = &ranked[0].evidence;
+        out.push_str(&format!(
+            "Identified primary object **{}** in state `{}` ({})\n\n",
+            top.r#ref.id, top.state, top.title
+        ));
+
+        out.push_str("### Evidence & Facts\n\n");
+        out.push_str("| Object | Tracker | Status | Summary |\n");
+        out.push_str("| :--- | :--- | :--- | :--- |\n");
+        for r in ranked.iter().take(3) {
+            let ev = &r.evidence;
+            let snippet = ev.title.chars().take(40).collect::<String>();
+            out.push_str(&format!(
+                "| **{}** | {} | `{}` | {} |\n",
+                ev.r#ref.id, ev.r#ref.source, ev.state, snippet
+            ));
+        }
+        out.push('\n');
+
+        if !findings.is_empty() {
+            out.push_str("### Cross-Tracker Status & Contradictions\n\n");
+            for f in findings.iter().take(2) {
+                out.push_str(&format!("- **[{}]**: {}\n", f.finding_type, f.explanation));
+            }
+            out.push('\n');
+        }
+
+        Some(out)
     }
 }

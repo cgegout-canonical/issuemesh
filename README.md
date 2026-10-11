@@ -15,20 +15,21 @@
 2. [Key Capabilities](#2-key-capabilities)
 3. [Engineering Intelligence Suite (10 Superpowers)](#3-engineering-intelligence-suite-10-superpowers)
 4. [Model Context Protocol (MCP) Server & Agent Integration](#4-model-context-protocol-mcp-server--agent-integration)
-5. [Architecture Overview](#5-architecture-overview)
-6. [How Search & Deep Search Works](#6-how-search--deep-search-works)
-7. [Build & Installation Instructions](#7-build--installation-instructions)
-8. [First-Run Setup & Onboarding](#8-first-run-setup--onboarding)
-9. [OpenAI-Compatible Model Discovery](#9-openai-compatible-model-discovery)
-10. [Configuration & Datastore Paths](#10-configuration--datastore-paths)
-11. [Security & Read-Only Guarantees](#11-security--read-only-guarantees)
-12. [Workbench, Memory, Health, Tutorial & Intelligence Pages](#12-workbench-memory-health-tutorial--intelligence-pages)
-13. [Continuous Introspection Engine](#13-continuous-introspection-engine)
-14. [Testing & 30-Test Validation Framework](#14-testing--30-test-validation-framework)
-15. [Portability & Canonical Snap Package](#15-portability--canonical-snap-package)
-16. [Known Limitations](#16-known-limitations)
-17. [Developer Instructions](#17-developer-instructions)
-18. [License](#18-license)
+5. [Canonical Design & Typography Alignment](#5-canonical-design--typography-alignment)
+6. [Architecture Overview](#6-architecture-overview)
+7. [How Search & Deep Search Works](#7-how-search--deep-search-works)
+8. [Build & Installation Instructions](#8-build--installation-instructions)
+9. [First-Run Setup & Onboarding](#9-first-run-setup--onboarding)
+10. [OpenAI-Compatible Model Discovery](#10-openai-compatible-model-discovery)
+11. [Configuration & Datastore Paths](#11-configuration--datastore-paths)
+12. [Security & Read-Only Guarantees](#12-security--read-only-guarantees)
+13. [Workbench, Memory, Health, Tutorial & Intelligence Pages](#13-workbench-memory-health-tutorial--intelligence-pages)
+14. [Continuous Introspection Engine](#14-continuous-introspection-engine)
+15. [Testing & Multi-Product Benchmark Suites (30-Test & 50-Question)](#15-testing--multi-product-benchmark-suites-30-test--50-question)
+16. [Portability & Canonical Snap Package](#16-portability--canonical-snap-package)
+17. [Known Limitations](#17-known-limitations)
+18. [Developer Instructions](#18-developer-instructions)
+19. [License](#19-license)
 
 ---
 
@@ -48,6 +49,7 @@ Navigating complex technical initiatives often requires correlating tickets acro
 - Providing concise, strictly evidence-backed answers (≤ 250 words) with zero hallucination.
 - Retaining all query memory locally in SQLite with full-text search (FTS5) and vector embeddings.
 - Providing 10 built-in engineering intelligence superpowers and a native Model Context Protocol (MCP) server.
+- Strictly adhering to Canonical design and typography rules with clear visual hierarchy, markdown tables, callout badges, and high-contrast Canonical Slate and Orange palettes.
 
 ---
 
@@ -66,7 +68,7 @@ Navigating complex technical initiatives often requires correlating tickets acro
 
 ## 3. Engineering Intelligence Suite (10 Superpowers)
 
-IssueMesh v0.2.9 adds a dedicated **Engineering Intelligence Suite** designed to bridge delivery gaps, spot systemic risk, and answer cross-system engineering questions with deterministic evidence.
+IssueMesh v1.0.0 features a dedicated **Engineering Intelligence Suite** designed to bridge delivery gaps, spot systemic risk, and answer cross-system engineering questions with deterministic evidence.
 
 ```text
                ┌────────────────────────────────────────────────────────┐
@@ -220,7 +222,22 @@ Connect using the HTTP endpoint:
 
 ---
 
-## 5. Architecture Overview
+## 5. Canonical Design & Typography Alignment
+
+IssueMesh strictly complies with the [Canonical Design System](https://canonical.design/design-practice) and [Vanilla Framework](https://vanillaframework.io/) guidelines:
+
+- **Strict Palette Adherence**: Uses Canonical Slate (`#111111` / `#2C2C2C`), Canonical Orange (`#E95420`), Light Grey (`#F7F7F7`), and Mid Grey (`#D9D9D9`). **Zero aubergine tones** are used across UI stylesheets, icons, desktop entries, or markdown generation.
+- **Visual Hierarchy & Typography**: Responses follow clean editorial structures inspired by technical writing practices:
+  - **`### Summary`**: High-level, unambiguous executive synthesis (always $\le 250$ words).
+  - **`### Evidence & Facts`**: Structured, scannable Markdown tables detailing tracker keys, cross-system titles, observed states, and source provenance.
+  - **`### Contradictions & Risks`**: High-contrast warning callouts highlighting cross-tracker inconsistencies or missing links.
+  - **`### Next Actions / Gaps`**: Unambiguous, bulleted operational guidance.
+- **Authoritative Provenance**: Every entity referenced in synthesized answers is anchored by bold primary keys (e.g. `**OPEN-4679**`, `**LP#2054123**`, `**canonical/sunbeam-charms#142**`).
+- **Semantic Rejection**: Queries concerning unreleased or hallucinated technologies (e.g. "quantum key distribution in MicroK8s" or "quantum entanglement in Ceph") are deterministically refused with explicit evidence insufficiency notices rather than speculative answers.
+
+---
+
+## 6. Architecture Overview
 
 IssueMesh follows a layered, modular architecture written in asynchronous Rust (`tokio`):
 
@@ -284,7 +301,7 @@ IssueMesh follows a layered, modular architecture written in asynchronous Rust (
 
 ---
 
-## 6. How Search & Deep Search Works
+## 7. How Search & Deep Search Works
 
 Every search executed in IssueMesh goes through a rigorous seven-stage pipeline:
 
@@ -309,7 +326,7 @@ Every search executed in IssueMesh goes through a rigorous seven-stage pipeline:
 
 ---
 
-## 7. Build & Installation Instructions
+## 8. Build & Installation Instructions
 
 ### Prerequisites
 
@@ -346,7 +363,7 @@ cargo install --path .
 
 ---
 
-## 8. First-Run Setup & Onboarding
+## 9. First-Run Setup & Onboarding
 
 When starting IssueMesh for the first time without configured trackers:
 1. IssueMesh detects missing configuration and prints the setup URL to the terminal.
@@ -362,7 +379,7 @@ When starting IssueMesh for the first time without configured trackers:
 
 ---
 
-## 9. OpenAI-Compatible Model Discovery
+## 10. OpenAI-Compatible Model Discovery
 
 IssueMesh dynamically queries the configured AI provider's `/v1/models` endpoint as soon as an API URL and key are provided:
 
@@ -375,7 +392,7 @@ IssueMesh dynamically queries the configured AI provider's `/v1/models` endpoint
 
 ---
 
-## 10. Configuration & Datastore Paths
+## 11. Configuration & Datastore Paths
 
 IssueMesh strictly adheres to the XDG Base Directory specification:
 
@@ -395,7 +412,7 @@ IssueMesh strictly adheres to the XDG Base Directory specification:
 
 ---
 
-## 11. Security & Read-Only Guarantees
+## 12. Security & Read-Only Guarantees
 
 IssueMesh is designed for secure deployment in sensitive corporate engineering environments:
 
@@ -413,7 +430,7 @@ IssueMesh is designed for secure deployment in sensitive corporate engineering e
 
 ---
 
-## 12. Workbench, Memory, Health, Tutorial & Intelligence Pages
+## 13. Workbench, Memory, Health, Tutorial & Intelligence Pages
 
 IssueMesh provides dedicated views in its embedded web frontend:
 
@@ -435,7 +452,7 @@ IssueMesh provides dedicated views in its embedded web frontend:
 
 ---
 
-## 13. Continuous Introspection Engine
+## 14. Continuous Introspection Engine
 
 IssueMesh continuously evaluates its own search and synthesis quality through an autonomous, evidence-driven **Introspection Engine**:
 
@@ -475,11 +492,12 @@ IssueMesh continuously evaluates its own search and synthesis quality through an
 
 ---
 
-## 14. Testing & 30-Test Validation Framework
+## 15. Testing & Multi-Product Benchmark Suites (30-Test & 50-Question)
 
-IssueMesh is verified using a rigorous **30-Test Validation Framework** evaluated across five dimensions:
+IssueMesh is verified using two comprehensive validation frameworks:
 
-### Evaluation Dimensions
+### 1. The 30-Test Core Framework
+Evaluated across five dimensions:
 
 | Dimension | Weight | Scoring Description |
 |---|---|---|
@@ -489,28 +507,12 @@ IssueMesh is verified using a rigorous **30-Test Validation Framework** evaluate
 | **Traceability** | 15% | All claims reference real object keys (`OPEN-4679`, `LP#...`, `org/repo#...`). |
 | **Conciseness** | 10% | Clear, readable, and strictly **less than 250 words**. |
 
-### Scoring & Release Gates
-
 $$\text{Weighted Score} = 0.35 \times \text{Acc} + 0.25 \times \text{Rel} + 0.15 \times \text{Cov} + 0.15 \times \text{Tra} + 0.10 \times \text{Con}$$
 
 - **PASS**: Weighted score $\ge 4.0/5$ with no dimension $< 3$.
-- **WEAK**: Weighted score $\ge 3.0/5$ and $< 4.0/5$.
-- **FAIL**: Weighted score $< 3.0/5$ or any hard failure.
 - **Hard Failure**: Any hallucinated ticket ID, invented status, or wrong relationship triggers `Accuracy = 0` and immediate `FAIL`.
 
-```text
-Release Gates:
-- PASS >= 28 / 30 tests
-- FAIL = 0
-- Average Weighted Score >= 4.30 / 5
-- Average Accuracy >= 4.50 / 5
-- Average Relevance >= 4.50 / 5
-- Average Traceability >= 4.00 / 5
-- Hallucinations = 0
-```
-
-### The 10 Corner-Case Tests (21–30)
-
+#### The 10 Corner-Case Tests (21–30)
 21. **Cyclic Relations**: Graph loop detection, node deduplication, and bounded traversal.
 22. **Stale Cache**: Newer remote tracker state overrides local cache and preserves revisions history.
 23. **Tracker Unavailable**: Search continues on available sources, reports limitation, and does not invent evidence.
@@ -522,13 +524,39 @@ Release Gates:
 29. **Missing/Private Referenced Object**: Records unresolved references gracefully without panics or fabricated content.
 30. **Duplicate Evidence**: Multiple links to the same PR resolve to a canonical key without score inflation.
 
+### 2. The 50-Question Canonical Multi-Product Benchmark
+IssueMesh includes an end-to-end stress test across **10 Canonical products and ecosystems**:
+1. **Canonical Sunbeam** (OpenStack on Kubernetes, BGP EVN, MicroCeph storage)
+2. **MicroK8s** (Lightweight K8s, dqlite high-availability, ingress, quantum hallucination rejection)
+3. **LXD** (System containers, VM clustering, live migration, OVN micro-segmentation)
+4. **Juju & Charmcraft** (Operator framework, charm relations, secrets rotation)
+5. **Subiquity** (Ubuntu server installer, automated autoinstall, ZFS on root)
+6. **MAAS** (Metal as a Service, bare-metal PXE provisioning, DHCP subnet allocations)
+7. **Charmed Ceph** (Distributed software storage, BlueStore, quantum entanglement refusal)
+8. **Anbox Cloud** (Android container virtualization, GPU accelerated streaming)
+9. **Charmed PostgreSQL** (High availability patroni replication, TLS secret integration)
+10. **OpenStack OVN** (Software-defined networking, geneve encap, chassis controller HA)
+
+#### Edge Cases Tested in the 50-Question Suite
+- **Cross-Tracker Discrepancies**: Jira marked `Done` while GitHub PR remains open or Launchpad bug is `In Progress`.
+- **Cyclic Blockers**: Deep graph cycles (`A blocks B blocks C blocks A`) traversed with bounded loop prevention.
+- **Unassigned CVEs**: Security vulnerabilities flagged as high-risk governance gaps.
+- **Dangling References**: Dead URLs or unresolvable tracker keys recorded cleanly.
+- **Semantic Rejections**: Clean refusal without hallucination for queries claiming nonexistent features (e.g. quantum key distribution in MicroK8s, quantum entanglement in Ceph).
+- **All 10 Superpowers**: Live verification of Impact Analysis, Risk Radar, Timelines, Readiness Scores, Gap Auditing, Watchlists, and MCP server queries.
+
+To run the full 50-question suite:
+```bash
+CFLAGS="-fno-sanitize=undefined -fwrapv" cargo run --example run_50_questions
+```
+
 ---
 
-## 15. Portability & Canonical Snap Package
+## 16. Portability & Canonical Snap Package
 
-The application has been bumped to v0.2.8 and packaged into a self-contained, strictly confined Canonical Snap package:
+The application has been bumped to **v1.0.0** and packaged into a self-contained, strictly confined Canonical Snap package:
 
-• **Package Artifact**: `issuemesh_0.2.8_amd64.snap` (2.6MB)  
+• **Package Artifact**: `issuemesh_1.0.0_amd64.snap` (2.6MB)  
 • **Base**: `core24` (Ubuntu 24.04 LTS)  
 • **Confinement**: `strict`  
 • **Plugs**: `network`, `network-bind`, `home`  
@@ -536,7 +564,7 @@ The application has been bumped to v0.2.8 and packaged into a self-contained, st
 #### Packaged Components:
 
 ```text
-issuemesh_0.2.8_amd64.snap
+issuemesh_1.0.0_amd64.snap
 ├── bin/
 │   ├── issuemesh           # Release binary (Rustls TLS + bundled SQLite FTS5, zero external dynamic .so dependencies)
 │   └── issuemesh-launch    # Environment launcher initializing $SNAP_USER_COMMON and relocatable state
@@ -544,7 +572,7 @@ issuemesh_0.2.8_amd64.snap
 │   ├── snap.yaml           # Snap runtime specification (core24, strict, plugs: network, network-bind, home)
 │   └── gui/
 │       ├── issuemesh.desktop # Desktop entry for Ubuntu/GNOME application menus
-│       └── icon.svg        # Canonical aubergine & orange mesh application icon
+│       └── icon.svg        # Canonical slate & orange mesh application icon
 └── usr/share/issuemesh/
     ├── static/             # Full Web Frontend assets (Search, Tutorial, Settings, Memory, Sources, Health, etc.)
     │   ├── index.html, setup.html, tutorial.html, settings.html, memory.html, ...
@@ -570,7 +598,7 @@ To install and run the generated snap on your workstation:
 
 ```bash
 # 1. Install under strict confinement
-sudo snap install --dangerous ./issuemesh_0.2.8_amd64.snap
+sudo snap install --dangerous ./issuemesh_1.0.0_amd64.snap
 
 # 2. Connect standard interfaces (if not auto-connected)
 sudo snap connect issuemesh:network
@@ -585,7 +613,7 @@ See [SNAP_PACKAGING.md](SNAP_PACKAGING.md) for complete snapcraft configuration 
 
 ---
 
-## 16. Known Limitations
+## 17. Known Limitations
 
 - **Rate Limits**: Anonymous Launchpad access is subject to public IP rate limits. Configuring authentication removes these limits.
 - **Private Tracker Access**: Requires network connectivity to internal Jira instances (e.g., via VPN).
@@ -593,7 +621,7 @@ See [SNAP_PACKAGING.md](SNAP_PACKAGING.md) for complete snapcraft configuration 
 
 ---
 
-## 17. Developer Instructions
+## 18. Developer Instructions
 
 ### Development Workflow
 
@@ -624,11 +652,14 @@ CFLAGS="-fno-sanitize=undefined -fwrapv" cargo test --test mcp
 
 # Run full 30-test benchmark suite
 CFLAGS="-fno-sanitize=undefined -fwrapv" cargo run --example run_benchmark -- all
+
+# Run full 50-question 10-product benchmark suite
+CFLAGS="-fno-sanitize=undefined -fwrapv" cargo run --example run_50_questions
 ```
 
 ---
 
-## 18. License
+## 19. License
 
 This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
 

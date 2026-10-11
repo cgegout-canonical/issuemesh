@@ -621,8 +621,8 @@ Primary palette:
 
 ```text
 Ubuntu Orange     #E95420
-Aubergine         #772953
-Dark Aubergine    #2C001E
+Canonical Slate   #111111
+Dark Slate        #2C2C2C
 
 White             #FFFFFF
 Warm Grey         #F7F7F7

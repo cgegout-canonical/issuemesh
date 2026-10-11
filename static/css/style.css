@@ -1,8 +1,9 @@
 :root {
     --color-orange: #E95420;
     --color-orange-hover: #D24515;
-    --color-aubergine: #772953;
-    --color-dark-aubergine: #2C001E;
+    --color-slate: #111111;
+    --color-slate-mid: #2C2C2C;
+    --color-blue: #0066CC;
     --color-white: #FFFFFF;
     --color-warm-grey: #F7F7F7;
     --color-mid-grey: #AEA79F;
@@ -159,7 +160,7 @@ nav a.active {
     left: -40%;
     bottom: 0;
     width: 40%;
-    background: linear-gradient(90deg, #772953 0%, #E95420 50%, #FF7844 100%);
+    background: linear-gradient(90deg, #111111 0%, #E95420 50%, #FF7844 100%);
     border-radius: 2px;
     animation: canonical-bar-run 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
