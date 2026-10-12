@@ -412,10 +412,11 @@
 
             const points = trends.map((t, i) => {
                 const x = padL + (n > 1 ? i * stepX : innerW / 2);
-                const score = t.avg_score || 0;
+                const score = t.average_score ?? t.avg_score ?? 0;
+                const day = t.date || t.day || '';
                 // scale 0..5
                 const y = padT + innerH - ((score / 5.0) * innerH);
-                return { x, y, score, day: t.day, pass: t.pass_count, weak: t.weak_count, fail: t.fail_count };
+                return { x, y, score, day, pass: t.pass_count || 0, weak: t.weak_count || 0, fail: t.fail_count || 0 };
             });
 
             const pathD = points.reduce((acc, p, idx) => {
@@ -427,9 +428,9 @@
 
             let circles = points.map(p => `
                 <circle cx="${p.x}" cy="${p.y}" r="4" fill="var(--color-orange)" stroke="#fff" stroke-width="2">
-                    <title>${p.day}: ${p.score.toFixed(2)}/5 (PASS:${p.pass} WEAK:${p.weak} FAIL:${p.fail})</title>
+                    <title>${escapeHtml(p.day)}: ${p.score.toFixed(2)}/5 (PASS:${p.pass} WEAK:${p.weak} FAIL:${p.fail})</title>
                 </circle>
-                <text x="${p.x}" y="${padT + innerH + 18}" text-anchor="middle" font-size="10" fill="#777">${p.day.slice(5)}</text>
+                <text x="${p.x}" y="${padT + innerH + 18}" text-anchor="middle" font-size="10" fill="#777">${escapeHtml((p.day || '').slice(5))}</text>
             `).join('');
 
             const svg = `
