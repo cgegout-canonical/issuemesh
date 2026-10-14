@@ -148,6 +148,30 @@
         </div>
 
         <div class="card">
+            <div class="card-title">Native Concept Layer</div>
+            <p style="color: var(--color-muted-text); font-size: 0.9rem; margin-bottom: 1rem;">
+                Semantic domain concepts extracted from indexed issues and cross-tracker co-occurrences.
+            </p>
+            <div class="diag-grid" style="margin-bottom: 1rem;">
+                <div class="metric-box">
+                    <div class="metric-value" id="diag-concepts">-</div>
+                    <div class="metric-label">Domain Concepts</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-value" id="diag-indexed-concepts">-</div>
+                    <div class="metric-label">Objects Conceptualized</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-value" id="diag-concept-links">-</div>
+                    <div class="metric-label">Co-occurrence Links</div>
+                </div>
+            </div>
+            <div style="margin-top: 0.5rem;">
+                <a href="/concepts" class="btn btn-secondary" style="display: inline-block; text-decoration: none;">Explore Concept Graph →</a>
+            </div>
+        </div>
+
+        <div class="card">
             <div class="card-title">Storage Diagnostics</div>
             <table class="data-table">
                 <tbody>
@@ -185,6 +209,10 @@
                 document.getElementById('diag-embeddings').textContent = (data.total_embeddings || 0).toLocaleString();
                 document.getElementById('diag-pages').textContent = `${data.page_count} (${data.free_pages} free)`;
                 document.getElementById('diag-runs').textContent = (data.total_search_runs || 0).toLocaleString();
+
+                document.getElementById('diag-concepts').textContent = (data.total_concepts || 0).toLocaleString();
+                document.getElementById('diag-indexed-concepts').textContent = (data.indexed_concepts || 0).toLocaleString();
+                document.getElementById('diag-concept-links').textContent = (data.total_concept_links || 0).toLocaleString();
 
                 document.getElementById('diag-path').textContent = data.database_file;
                 document.getElementById('diag-schema').textContent = 'v' + data.schema_version;

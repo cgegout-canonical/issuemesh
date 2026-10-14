@@ -355,6 +355,8 @@ function renderStructuredResult(jobId, result) {
                         </details>
                     ` : ''}
 
+                    <div id="concepts-for-${i}" style="margin-top: 0.5rem; display: flex; flex-wrap: wrap; gap: 0.25rem;"></div>
+
                     <div style="margin-top: 0.75rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
                         <div style="display: flex; gap: 1rem; font-size: 0.8rem; color: var(--color-muted-text);">
                             ${ev.author ? `<span>Author: <strong>${escapeHtml(ev.author)}</strong></span>` : ''}
@@ -369,6 +371,9 @@ function renderStructuredResult(jobId, result) {
                     </div>
                 </div>
             `;
+
+            // Asynchronously fetch concepts for this object
+            fetchObjectConcepts(objKey, `concepts-for-${i}`);
         }
     }
 
@@ -407,3 +412,22 @@ function formatTime(iso) {
 function escapeHtml(s) {
     return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
+
+async function fetchObjectConcepts(objectKey, targetElementId) {
+    try {
+        const resp = await fetch(`/api/concepts/object/${encodeURIComponent(objectKey)}`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const container = document.getElementById(targetElementId);
+        if (!container || !data.concepts || data.concepts.length === 0) return;
+
+        container.innerHTML = data.concepts.map(c => `
+            <a href="/concepts" style="text-decoration: none;" title="${escapeHtml(c.concept_kind)}: ${escapeHtml(c.name)} (weight: ${c.weight})">
+                <span class="badge" style="background: var(--color-warm-grey); color: var(--color-slate-mid); border: 1px solid var(--color-border-grey); font-size: 0.75rem; padding: 0.15rem 0.45rem;">
+                    ${escapeHtml(c.name)}
+                </span>
+            </a>
+        `).join('');
+    } catch (_) {}
+}
+

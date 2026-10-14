@@ -37,8 +37,12 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/tutorial", get(tutorial_page_handler))
         .route("/intelligence", get(intelligence_page_handler))
+        .route("/concepts", get(concepts_page_handler))
         .route("/search/{id}/run", get(search_run_page_handler))
         // API routes
+        .route("/api/concepts", get(list_concepts_api_handler))
+        .route("/api/concepts/{id}/related", get(get_related_concepts_api_handler))
+        .route("/api/concepts/object/{*key}", get(get_object_concepts_api_handler))
         .route(
             "/api/mcp",
             post(crate::mcp::mcp_http_handler).get(crate::mcp::mcp_info_handler),
@@ -208,6 +212,13 @@ async fn search_run_page_handler() -> impl IntoResponse {
     match Assets::get("run.html") {
         Some(content) => Html(content.data).into_response(),
         None => (StatusCode::NOT_FOUND, "run.html not found").into_response(),
+    }
+}
+
+async fn concepts_page_handler() -> impl IntoResponse {
+    match Assets::get("concepts.html") {
+        Some(content) => Html(content.data).into_response(),
+        None => (StatusCode::NOT_FOUND, "concepts.html not found").into_response(),
     }
 }
 
@@ -1924,3 +1935,103 @@ async fn diff_evidence_handler(
     let diff = crate::intelligence::diff::diff_evidence_snapshots(&payload.previous, &current_evs);
     Json(diff).into_response()
 }
+
+// ----------------------------------------------------------------------------
+// Concept Layer API Handlers
+// ----------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct ConceptsQueryParams {
+    pub query: Option<String>,
+    pub source: Option<String>,
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
+}
+
+async fn list_concepts_api_handler(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Query(params): axum::extract::Query<ConceptsQueryParams>,
+) -> Response {
+    let limit = params.limit.unwrap_or(50).min(200);
+    let offset = params.offset.unwrap_or(0);
+
+    let (total_concepts, indexed_objects, total_links) = match state.store.get_concept_stats().await {
+        Ok(s) => s,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+
+    let concepts = if let Some(ref q) = params.query {
+        if !q.trim().is_empty() {
+            state.store.search_concepts_fts(q, limit).await
+        } else {
+            state.store.list_concepts(limit, offset).await
+        }
+    } else if let Some(ref src) = params.source {
+        state.store.list_top_concepts_for_source(src, limit).await
+    } else {
+        state.store.list_concepts(limit, offset).await
+    };
+
+    match concepts {
+        Ok(list) => Json(serde_json::json!({
+            "total_concepts": total_concepts,
+            "indexed_objects": indexed_objects,
+            "total_links": total_links,
+            "concepts": list,
+        }))
+        .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_related_concepts_api_handler(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<i64>,
+) -> Response {
+    let limit = 20;
+    let related_res = state.store.get_related_concepts(id, limit).await;
+    let objects_res = state.store.get_objects_for_concept(id, limit).await;
+
+    match (related_res, objects_res) {
+        (Ok(related), Ok(objects)) => Json(serde_json::json!({
+            "concept_id": id,
+            "related_concepts": related.into_iter().map(|(c, co)| serde_json::json!({ "concept": c, "co_occurrence": co })).collect::<Vec<_>>(),
+            "matching_objects": objects.into_iter().map(|(k, w)| serde_json::json!({ "object_key": k, "weight": w })).collect::<Vec<_>>(),
+        }))
+        .into_response(),
+        (Err(e), _) | (_, Err(e)) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_object_concepts_api_handler(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(key): axum::extract::Path<String>,
+) -> Response {
+    match state.store.get_concepts_for_object(&key).await {
+        Ok(concepts) => Json(serde_json::json!({
+            "object_key": key,
+            "concepts": concepts,
+        }))
+        .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+

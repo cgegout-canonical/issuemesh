@@ -324,6 +324,66 @@ pub async fn execute_tool(state: Arc<AppState>, tool_name: &str, args: Value) ->
             }))
         }
 
+        "concepts" => {
+            let query = args.get("query").and_then(|v| v.as_str());
+            let source = args.get("source").and_then(|v| v.as_str());
+            let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
+
+            let (total_concepts, indexed_objects, total_links) = state.store.get_concept_stats().await?;
+
+            let concepts = if let Some(q) = query {
+                state.store.search_concepts_fts(q, limit).await?
+            } else if let Some(src) = source {
+                state.store.list_top_concepts_for_source(src, limit).await?
+            } else {
+                state.store.list_concepts(limit, 0).await?
+            };
+
+            Ok(json!({
+                "total_concepts": total_concepts,
+                "indexed_objects": indexed_objects,
+                "total_links": total_links,
+                "concepts": concepts,
+            }))
+        }
+
+        "semantic_related" => {
+            let concept_id = args.get("concept_id").and_then(|v| v.as_i64());
+            let object_key = args.get("object_key").and_then(|v| v.as_str());
+            let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(15) as usize;
+
+            if let Some(cid) = concept_id {
+                let related_concepts = state.store.get_related_concepts(cid, limit).await?;
+                let matching_objects = state.store.get_objects_for_concept(cid, limit).await?;
+                Ok(json!({
+                    "concept_id": cid,
+                    "related_concepts": related_concepts.into_iter().map(|(c, co)| json!({ "concept": c, "co_occurrence": co })).collect::<Vec<_>>(),
+                    "matching_objects": matching_objects.into_iter().map(|(k, w)| json!({ "object_key": k, "weight": w })).collect::<Vec<_>>(),
+                }))
+            } else if let Some(key) = object_key {
+                let concepts = state.store.get_concepts_for_object(key).await?;
+                let mut related_keys = Vec::new();
+                for c in &concepts {
+                    let objs = state.store.get_objects_for_concept(c.concept_id, 5).await?;
+                    for (ok, w) in objs {
+                        if ok != key && !related_keys.iter().any(|(k, _)| k == &ok) {
+                            related_keys.push((ok, w));
+                        }
+                    }
+                }
+                related_keys.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                related_keys.truncate(limit);
+
+                Ok(json!({
+                    "object_key": key,
+                    "domain_concepts": concepts,
+                    "semantic_neighbors": related_keys.into_iter().map(|(k, w)| json!({ "object_key": k, "concept_weight": w })).collect::<Vec<_>>(),
+                }))
+            } else {
+                Err(anyhow!("Provide either 'concept_id' or 'object_key' parameter"))
+            }
+        }
+
         _ => Err(anyhow!("Unknown tool '{}'", tool_name)),
     }
 }

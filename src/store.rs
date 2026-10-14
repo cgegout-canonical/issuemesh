@@ -1446,6 +1446,17 @@ impl Store {
                 by_type.insert(tp, cnt);
             }
 
+            // Concepts diagnostics
+            let total_concepts: i64 = conn
+                .query_row("SELECT COUNT(*) FROM concepts", [], |r| r.get(0))
+                .unwrap_or(0);
+            let indexed_concepts: i64 = conn
+                .query_row("SELECT COUNT(*) FROM concept_index WHERE status = 'done'", [], |r| r.get(0))
+                .unwrap_or(0);
+            let total_concept_links: i64 = conn
+                .query_row("SELECT COUNT(*) FROM concept_links", [], |r| r.get(0))
+                .unwrap_or(0);
+
             Ok(MemoryDiagnostics {
                 database_file: path_str,
                 file_size_bytes,
@@ -1464,6 +1475,9 @@ impl Store {
                 oldest_object,
                 newest_object,
                 last_write,
+                total_concepts,
+                indexed_concepts,
+                total_concept_links,
             })
         })
         .await
@@ -1494,6 +1508,7 @@ impl Store {
                     object_count,
                     last_updated,
                     first_seen,
+                    top_concepts: Vec::new(),
                 })
             })?;
 
@@ -1501,6 +1516,25 @@ impl Store {
             for r in rows {
                 out.push(r?);
             }
+
+            // Populate top 10 concepts per source/container
+            for item in &mut out {
+                let mut cstmt = conn.prepare(
+                    "SELECT c.name
+                     FROM concepts c
+                     JOIN object_concepts oc ON c.concept_id = oc.concept_id
+                     JOIN objects o ON oc.object_key = o.object_key
+                     WHERE o.source = ?1 AND o.container = ?2
+                     GROUP BY c.concept_id
+                     ORDER BY COUNT(DISTINCT oc.object_key) DESC, c.name ASC
+                     LIMIT 10",
+                )?;
+                let c_rows = cstmt.query_map(rusqlite::params![&item.source, &item.container], |r| r.get::<_, String>(0))?;
+                for n in c_rows.flatten() {
+                    item.top_concepts.push(n);
+                }
+            }
+
             Ok(out)
         })
         .await
@@ -2574,17 +2608,17 @@ impl Store {
         .await
     }
 
-    /// List all concepts ordered by object_count desc, limit
-    pub async fn list_concepts(&self, limit: usize) -> Result<Vec<ConceptRecord>> {
+    /// List all concepts ordered by object_count desc, limit, offset
+    pub async fn list_concepts(&self, limit: usize, offset: usize) -> Result<Vec<ConceptRecord>> {
         self.call(move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT concept_id, name, kind, first_seen, last_seen, object_count
                  FROM concepts
                  ORDER BY object_count DESC, name ASC
-                 LIMIT ?1",
+                 LIMIT ?1 OFFSET ?2",
             )?;
 
-            let rows = stmt.query_map(rusqlite::params![limit as i64], |row| {
+            let rows = stmt.query_map(rusqlite::params![limit as i64, offset as i64], |row| {
                 Ok(ConceptRecord {
                     concept_id: row.get(0)?,
                     name: row.get(1)?,
@@ -2848,6 +2882,9 @@ pub struct MemoryDiagnostics {
     pub oldest_object: Option<String>,
     pub newest_object: Option<String>,
     pub last_write: Option<String>,
+    pub total_concepts: i64,
+    pub indexed_concepts: i64,
+    pub total_concept_links: i64,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -2857,6 +2894,8 @@ pub struct SourceContainerSummary {
     pub object_count: i64,
     pub last_updated: Option<String>,
     pub first_seen: Option<String>,
+    #[serde(default)]
+    pub top_concepts: Vec<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

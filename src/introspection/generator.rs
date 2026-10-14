@@ -64,6 +64,28 @@ impl QuestionGenerator {
             }
         }
 
+        // 2b. Check concepts that bridge multiple sources or have high co-occurrence
+        if let Ok(top_concepts) = store.list_concepts(8, 0).await {
+            for c in top_concepts {
+                if c.object_count >= 2 {
+                    let q = format!(
+                        "Across Jira, GitHub, and Launchpad, how is the '{}' ({}) domain concept handled and are there contradictory tracking states?",
+                        c.name, c.kind
+                    );
+                    let reason = format!(
+                        "Cross-tracker domain concept '{}' spans {} indexed objects",
+                        c.name, c.object_count
+                    );
+                    candidates.push(GeneratedQuestion {
+                        fingerprint: compute_fingerprint(&q),
+                        question: q,
+                        trigger_reason: reason,
+                        candidate_keys: vec![],
+                    });
+                }
+            }
+        }
+
         // 3. Check recently changed objects
         if let Ok(recent) = store.get_introspection_recent_objects(10).await {
             for (key, title, source, container, state) in recent {

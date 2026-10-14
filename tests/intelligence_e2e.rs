@@ -501,7 +501,7 @@ async fn test_e2e_all_intelligence_tabs_and_endpoints() -> Result<()> {
     assert_eq!(res.status(), StatusCode::OK);
     let mcp_res: Value = res.json().await?;
     let tools = mcp_res["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 16, "Expected exactly 16 advertised MCP tools");
+    assert_eq!(tools.len(), 18, "Expected exactly 18 advertised MCP tools");
 
     // 2. tools/call impact_analysis
     let res = client
@@ -546,8 +546,36 @@ async fn test_e2e_all_intelligence_tabs_and_endpoints() -> Result<()> {
         .as_str()
         .unwrap()
         .contains("total_risks"));
+
+    // 4. tools/call concepts
+    let res = client
+        .post(format!("{}/api/mcp", base))
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {
+                "name": "concepts",
+                "arguments": { "limit": 10 }
+            }
+        }))
+        .send()
+        .await?;
+    assert_eq!(res.status(), StatusCode::OK);
+    let call_res: Value = res.json().await?;
+    assert!(call_res["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("total_concepts"));
+
+    // 5. REST API: GET /api/concepts
+    let res = client.get(format!("{}/api/concepts", base)).send().await?;
+    assert_eq!(res.status(), StatusCode::OK);
+    let concepts_val: Value = res.json().await?;
+    assert!(concepts_val.get("total_concepts").is_some());
+
     println!(
-        "✓ Tab 8: Native MCP Server E2E verified (16 tools listed, live execution functional)"
+        "✓ Tab 8: Native MCP Server E2E verified (18 tools listed, live execution functional)"
     );
 
     println!("\n=== ALL INTELLIGENCE E2E TESTS PASSED SUCCESSFULLY! ===");

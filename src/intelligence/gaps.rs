@@ -203,6 +203,54 @@ impl GapDetector {
             }
         }
 
+        // 5. Semantic Duplicated Work across Different Trackers (via Concept Overlap >= 0.70)
+        let mut obj_concepts: HashMap<String, Vec<crate::store::ObjectConceptRecord>> = HashMap::new();
+        for obj in &all_objects {
+            let key = obj.r#ref.to_key();
+            if let Ok(ocs) = self.store.get_concepts_for_object(&key).await {
+                if !ocs.is_empty() {
+                    obj_concepts.insert(key, ocs);
+                }
+            }
+        }
+
+        for i in 0..all_objects.len() {
+            let a = &all_objects[i];
+            let a_k = a.r#ref.to_key();
+            let c_a = match obj_concepts.get(&a_k) {
+                Some(c) => c,
+                None => continue,
+            };
+
+            for b in all_objects.iter().skip(i + 1) {
+                let b_k = b.r#ref.to_key();
+                // Flag cross-tracker or cross-container semantic duplicates
+                if a.r#ref.source == b.r#ref.source && a.container == b.container {
+                    continue;
+                }
+                let c_b = match obj_concepts.get(&b_k) {
+                    Some(c) => c,
+                    None => continue,
+                };
+
+                let overlap = crate::concepts::compute_pairwise_concept_overlap(c_a, c_b);
+                if overlap >= 0.70 {
+                    items.push(GapItem {
+                        id: format!("gap-semantic-dup-{}", items.len() + 1),
+                        category: "duplicated_work".to_string(),
+                        severity: "Medium".to_string(),
+                        title: format!("Cross-tracker semantic duplicate: '{}' and '{}'", a.r#ref.id, b.r#ref.id),
+                        description: format!(
+                            "Cross-tracker objects {} ({}) and {} ({}) share {:.0}% domain concept overlap despite different sources/containers.",
+                            a_k, a.r#ref.source, b_k, b.r#ref.source, overlap * 100.0
+                        ),
+                        affected_keys: vec![a_k.clone(), b_k],
+                        recommendation: "Cross-link issues across trackers with 'same_problem' or 'relates_to'.".to_string(),
+                    });
+                }
+            }
+        }
+
         let summary = format!(
             "Gap analysis detected {} governance & engineering gap(s) across the indexed mesh.",
             items.len()

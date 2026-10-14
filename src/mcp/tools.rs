@@ -181,5 +181,29 @@ pub fn get_advertised_tools() -> Vec<McpToolDefinition> {
                 "properties": {}
             }),
         },
+        McpToolDefinition {
+            name: "concepts".to_string(),
+            description: "Search or inspect the native domain concept graph, linked objects, and top concepts across tracked repositories.".to_string(),
+            inputSchema: json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Optional search term for domain concepts" },
+                    "source": { "type": "string", "description": "Optional source container filter (e.g. 'jira', 'github', 'launchpad')" },
+                    "limit": { "type": "integer", "description": "Maximum number of concepts to return (default: 20)" }
+                }
+            }),
+        },
+        McpToolDefinition {
+            name: "semantic_related".to_string(),
+            description: "Traverse semantic concept co-occurrence and find objects sharing deep domain concepts.".to_string(),
+            inputSchema: json!({
+                "type": "object",
+                "properties": {
+                    "concept_id": { "type": "integer", "description": "Concept ID to traverse related concepts and objects for" },
+                    "object_key": { "type": "string", "description": "Object key to retrieve domain concepts and semantic neighbors for" },
+                    "limit": { "type": "integer", "description": "Maximum number of results (default: 15)" }
+                }
+            }),
+        },
     ]
 }

@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IssueMesh - Domain Concept Graph</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .concept-layout {
+            display: grid;
+            grid-template-columns: 340px 1fr;
+            gap: 1.5rem;
+            margin-top: 1.5rem;
+        }
+        @media (max-width: 900px) {
+            .concept-layout {
+                grid-template-columns: 1fr;
+            }
+        }
+        .concept-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            max-height: 600px;
+            overflow-y: auto;
+            border: 1px solid var(--color-border-grey);
+            border-radius: 2px;
+        }
+        .concept-item {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--color-border-grey);
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--color-white);
+            transition: background 0.15s ease;
+        }
+        .concept-item:last-child {
+            border-bottom: none;
+        }
+        .concept-item:hover {
+            background: var(--color-warm-grey);
+        }
+        .concept-item.selected {
+            background: var(--color-warm-grey);
+            border-left: 3px solid var(--color-orange);
+            padding-left: calc(1rem - 3px);
+        }
+        .concept-name {
+            font-weight: 500;
+            color: var(--color-dark-text);
+        }
+        .concept-kind {
+            font-size: 0.75rem;
+            color: var(--color-muted-text);
+            text-transform: uppercase;
+            margin-left: 0.4rem;
+        }
+        .tag-pill {
+            display: inline-block;
+            padding: 0.2rem 0.5rem;
+            background: var(--color-warm-grey);
+            border: 1px solid var(--color-border-grey);
+            border-radius: 2px;
+            font-size: 0.8rem;
+            margin: 0.25rem 0.35rem 0.25rem 0;
+            color: var(--color-dark-text);
+            cursor: pointer;
+        }
+        .tag-pill:hover {
+            border-color: var(--color-orange);
+            color: var(--color-orange);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/" class="brand">
+            <span class="brand-dot"></span>
+            IssueMesh
+        </a>
+        <nav>
+            <a href="/">Search</a>
+            <a href="/intelligence">Intelligence</a>
+            <a href="/concepts" class="active">Concepts</a>
+            <a href="/memory">Memory</a>
+            <a href="/sources">Sources</a>
+            <a href="/introspection">Introspection</a>
+            <a href="/health">Health</a>
+            <a href="/tutorial">Tutorial</a>
+            <a href="/settings">Settings</a>
+        </nav>
+        <div id="header-health" class="status-badge">
+            <span class="dot dot-healthy"></span>
+            <span>Ready</span>
+        </div>
+    </header>
+
+    <main class="container">
+        <h1 style="font-weight: 300; margin-bottom: 0.5rem;">Native Domain Concept Graph</h1>
+        <p style="color: var(--color-muted-text); margin-bottom: 1.5rem;">
+            Explore LLM-extracted engineering concepts, cross-tracker co-occurrences, and semantic clusters across GitHub, Jira, and Launchpad.
+        </p>
+
+        <div class="diag-grid" style="margin-bottom: 1.5rem;">
+            <div class="metric-box">
+                <div class="metric-value" id="stat-total">-</div>
+                <div class="metric-label">Domain Concepts</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-value" id="stat-objects">-</div>
+                <div class="metric-label">Objects Conceptualized</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-value" id="stat-links">-</div>
+                <div class="metric-label">Co-occurrence Links</div>
+            </div>
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; margin-bottom: 1rem;">
+            <input type="text" id="concept-search-input" class="search-input" placeholder="Filter concepts by name..." style="max-width: 400px; padding: 0.5rem 0.75rem; font-size: 0.95rem;" oninput="onSearchInput()">
+            <button class="btn btn-secondary" onclick="loadConcepts()">Refresh</button>
+        </div>
+
+        <div class="concept-layout">
+            <div>
+                <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--color-slate-mid);">Concepts</h3>
+                <ul class="concept-list" id="concept-list">
+                    <li style="padding: 1rem; color: var(--color-muted-text);">Loading concepts...</li>
+                </ul>
+            </div>
+
+            <div>
+                <div class="card" id="detail-card">
+                    <div id="detail-empty">
+                        <div class="card-title">Concept Details</div>
+                        <p style="color: var(--color-muted-text); font-size: 0.95rem;">Select a domain concept on the left to inspect its co-occurrences and linked tracker objects.</p>
+                    </div>
+
+                    <div id="detail-content" style="display: none;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem;">
+                            <div>
+                                <h2 style="font-size: 1.4rem; font-weight: 600;" id="detail-name">-</h2>
+                                <div style="color: var(--color-muted-text); font-size: 0.85rem; margin-top: 0.2rem;">
+                                    Kind: <strong id="detail-kind">-</strong> &middot; Indexed Objects: <strong id="detail-count">-</strong>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="margin-bottom: 1.5rem;">
+                            <div class="card-title" style="font-size: 1rem; margin-bottom: 0.5rem;">Co-occurring Domain Concepts</div>
+                            <div id="detail-related-tags">
+                                <span style="color: var(--color-muted-text); font-size: 0.9rem;">None detected.</span>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="card-title" style="font-size: 1rem; margin-bottom: 0.5rem;">Linked Engineering Objects</div>
+                            <div id="detail-matching-objects">
+                                <p style="color: var(--color-muted-text); font-size: 0.9rem;">Loading objects...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let allConcepts = [];
+        let selectedConceptId = null;
+        let searchTimer = null;
+
+        async function loadConcepts() {
+            try {
+                const q = document.getElementById('concept-search-input').value.trim();
+                const url = q ? `/api/concepts?query=${encodeURIComponent(q)}` : '/api/concepts?limit=100';
+                const resp = await fetch(url);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+
+                document.getElementById('stat-total').textContent = (data.total_concepts || 0).toLocaleString();
+                document.getElementById('stat-objects').textContent = (data.indexed_objects || 0).toLocaleString();
+                document.getElementById('stat-links').textContent = (data.total_links || 0).toLocaleString();
+
+                allConcepts = data.concepts || [];
+                renderConceptList(allConcepts);
+
+                if (allConcepts.length > 0 && !selectedConceptId) {
+                    selectConcept(allConcepts[0].concept_id);
+                }
+            } catch (e) {
+                console.error(e);
+                document.getElementById('concept-list').innerHTML = `<li style="padding: 1rem; color: var(--color-red);">Error loading concepts: ${escapeHtml(e.message)}</li>`;
+            }
+        }
+
+        function renderConceptList(concepts) {
+            const list = document.getElementById('concept-list');
+            if (concepts.length === 0) {
+                list.innerHTML = '<li style="padding: 1rem; color: var(--color-muted-text);">No domain concepts found.</li>';
+                return;
+            }
+
+            let html = '';
+            for (const c of concepts) {
+                const isSel = c.concept_id === selectedConceptId ? 'selected' : '';
+                html += `
+                    <li class="concept-item ${isSel}" onclick="selectConcept(${c.concept_id})">
+                        <div>
+                            <span class="concept-name">${escapeHtml(c.name)}</span>
+                            <span class="concept-kind">${escapeHtml(c.kind)}</span>
+                        </div>
+                        <span class="badge" style="background: var(--color-warm-grey); font-size: 0.75rem;">${c.object_count}</span>
+                    </li>
+                `;
+            }
+            list.innerHTML = html;
+        }
+
+        async function selectConcept(conceptId) {
+            selectedConceptId = conceptId;
+            renderConceptList(allConcepts);
+
+            const c = allConcepts.find(item => item.concept_id === conceptId);
+            if (!c) return;
+
+            document.getElementById('detail-empty').style.display = 'none';
+            document.getElementById('detail-content').style.display = 'block';
+
+            document.getElementById('detail-name').textContent = c.name;
+            document.getElementById('detail-kind').textContent = c.kind;
+            document.getElementById('detail-count').textContent = c.object_count;
+
+            const tagsContainer = document.getElementById('detail-related-tags');
+            const objsContainer = document.getElementById('detail-matching-objects');
+            tagsContainer.innerHTML = '<span style="color: var(--color-muted-text);">Loading co-occurrences...</span>';
+            objsContainer.innerHTML = '<p style="color: var(--color-muted-text);">Loading linked objects...</p>';
+
+            try {
+                const resp = await fetch(`/api/concepts/${conceptId}/related`);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+
+                // Related tags
+                const rel = data.related_concepts || [];
+                if (rel.length === 0) {
+                    tagsContainer.innerHTML = '<span style="color: var(--color-muted-text); font-size: 0.85rem;">No co-occurring concepts yet.</span>';
+                } else {
+                    tagsContainer.innerHTML = rel.map(r => `
+                        <span class="tag-pill" onclick="searchOrSelectConcept('${escapeHtml(r.concept.name)}')">
+                            ${escapeHtml(r.concept.name)} <small style="color: var(--color-muted-text);">(${r.co_occurrence}x)</small>
+                        </span>
+                    `).join('');
+                }
+
+                // Matching objects
+                const objs = data.matching_objects || [];
+                if (objs.length === 0) {
+                    objsContainer.innerHTML = '<p style="color: var(--color-muted-text); font-size: 0.9rem;">No linked objects found.</p>';
+                } else {
+                    objsContainer.innerHTML = `
+                        <table class="data-table" style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+                            <thead>
+                                <tr>
+                                    <th style="text-align: left; padding: 0.5rem; background: var(--color-warm-grey);">Object Key</th>
+                                    <th style="text-align: left; padding: 0.5rem; background: var(--color-warm-grey);">Weight</th>
+                                    <th style="text-align: right; padding: 0.5rem; background: var(--color-warm-grey);">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${objs.map(o => `
+                                    <tr style="border-bottom: 1px solid var(--color-border-grey);">
+                                        <td style="padding: 0.5rem;"><code>${escapeHtml(o.object_key)}</code></td>
+                                        <td style="padding: 0.5rem;">${Number(o.weight).toFixed(2)}</td>
+                                        <td style="padding: 0.5rem; text-align: right;">
+                                            <a href="/intelligence?tab=impact&key=${encodeURIComponent(o.object_key)}" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.2rem 0.5rem; text-decoration: none;">Impact</a>
+                                            <a href="/intelligence?tab=timeline&key=${encodeURIComponent(o.object_key)}" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.2rem 0.5rem; text-decoration: none;">Timeline</a>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `;
+                }
+            } catch (err) {
+                console.error(err);
+                tagsContainer.innerHTML = `<span style="color: var(--color-red);">Error: ${escapeHtml(err.message)}</span>`;
+                objsContainer.innerHTML = `<p style="color: var(--color-red);">Error: ${escapeHtml(err.message)}</p>`;
+            }
+        }
+
+        function searchOrSelectConcept(name) {
+            document.getElementById('concept-search-input').value = name;
+            loadConcepts();
+        }
+
+        function onSearchInput() {
+            if (searchTimer) clearTimeout(searchTimer);
+            searchTimer = setTimeout(loadConcepts, 300);
+        }
+
+        function escapeHtml(s) {
+            return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        loadConcepts();
+    </script>
+</body>
+</html>

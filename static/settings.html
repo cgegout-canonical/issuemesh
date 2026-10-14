@@ -29,6 +29,7 @@
         <nav>
             <a href="/">Search</a>
             <a href="/intelligence">Intelligence</a>
+            <a href="/concepts">Concepts</a>
             <a href="/memory">Memory</a>
             <a href="/sources">Sources</a>
             <a href="/introspection">Introspection</a>
@@ -198,6 +199,39 @@
             </div>
         </div>
 
+        <!-- Concepts Layer -->
+        <div class="card settings-sec">
+            <div class="card-title">Native Concept Layer</div>
+            <p style="color: var(--color-muted-text); font-size: 0.95rem; margin-bottom: 1.25rem;">
+                Configure background LLM concept extraction, semantic recall, and daily token budget.
+            </p>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="concepts-enabled" checked> Enable Background Concept Extraction
+                </label>
+            </div>
+            <div class="form-group">
+                <label for="concepts-max-index">Max Objects to Extract Per Search</label>
+                <input type="number" id="concepts-max-index" value="5" min="1" max="20">
+                <div class="form-hint">Enqueues up to N objects from each search run for domain concept extraction.</div>
+            </div>
+            <div class="form-group">
+                <label for="concepts-queue-depth">Extraction Queue Depth</label>
+                <input type="number" id="concepts-queue-depth" value="256" min="16" max="1024">
+                <div class="form-hint">Maximum number of pending objects held in the in-memory queue.</div>
+            </div>
+            <div class="form-group">
+                <label for="concepts-input-tokens">Max Input Tokens Per Object</label>
+                <input type="number" id="concepts-input-tokens" value="2000" min="500" max="8000">
+                <div class="form-hint">Cap on object snippet and body tokens passed to the extraction prompt.</div>
+            </div>
+            <div class="form-group">
+                <label for="concepts-daily-budget">Daily Token Budget</label>
+                <input type="number" id="concepts-daily-budget" value="100000" min="1000" max="10000000">
+                <div class="form-hint">Stops concept extraction once daily token usage limit is reached.</div>
+            </div>
+        </div>
+
         <div class="btn-row">
             <button class="btn btn-primary" id="btn-save" onclick="saveSettings()">Save Configuration</button>
         </div>
@@ -255,6 +289,14 @@
                 const introLevel = (data.config.introspection && data.config.introspection.level !== undefined) ? data.config.introspection.level : 0;
                 document.getElementById('intro-level').value = introLevel;
                 updateIntroSliderUI(introLevel);
+
+                // Concepts
+                const concepts = data.config.concepts || {};
+                document.getElementById('concepts-enabled').checked = concepts.enabled !== undefined ? concepts.enabled : true;
+                document.getElementById('concepts-max-index').value = concepts.max_index_per_search || 5;
+                document.getElementById('concepts-queue-depth').value = concepts.max_queue_depth || 256;
+                document.getElementById('concepts-input-tokens').value = concepts.max_input_tokens || 2000;
+                document.getElementById('concepts-daily-budget').value = concepts.daily_token_budget || 100000;
             } catch (e) {
                 showAlert(`Error loading settings: ${e.message}`, false);
             }
@@ -329,6 +371,13 @@
                 },
                 introspection: {
                     level: parseInt(document.getElementById('intro-level').value, 10)
+                },
+                concepts: {
+                    enabled: document.getElementById('concepts-enabled').checked,
+                    max_index_per_search: parseInt(document.getElementById('concepts-max-index').value, 10) || 5,
+                    max_queue_depth: parseInt(document.getElementById('concepts-queue-depth').value, 10) || 256,
+                    max_input_tokens: parseInt(document.getElementById('concepts-input-tokens').value, 10) || 2000,
+                    daily_token_budget: parseInt(document.getElementById('concepts-daily-budget').value, 10) || 100000
                 }
             };
 
