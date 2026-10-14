@@ -3,9 +3,8 @@ use chrono::{Duration, Utc};
 use issuemesh::config::{Config, Secrets};
 use issuemesh::connectors::{Evidence, ObjectRef, Relation};
 use issuemesh::intelligence::{
-    calculate_confidence, diff_evidence_snapshots, CreateWatchlistRequest, EvidenceSnapshotItem,
-    GapDetector, ImpactAnalyzer, InvestigationManager, ReadinessEvaluator, RiskRadar,
-    SaveInvestigationRequest, StoryReconstructor, WatchlistService,
+    calculate_confidence, CreateWatchlistRequest, GapDetector, ImpactAnalyzer, ReadinessEvaluator,
+    RiskRadar, StoryReconstructor, WatchlistService,
 };
 use issuemesh::mcp::handle_mcp_request;
 use issuemesh::paths::Paths;
@@ -56,6 +55,7 @@ struct BenchmarkQuestion {
     product: &'static str,
     question: &'static str,
     edge_case_type: &'static str,
+    #[allow(dead_code)]
     expected_keywords: &'static [&'static str],
 }
 
@@ -438,7 +438,10 @@ async fn main() -> Result<()> {
     println!("     Testing Edge Cases: Cyclic, Contradictions, Gaps, Readiness, Confidence    ");
     println!("================================================================================");
 
-    let temp_db = std::env::temp_dir().join(format!("issuemesh_50_benchmark_{}.db", uuid::Uuid::new_v4()));
+    let temp_db = std::env::temp_dir().join(format!(
+        "issuemesh_50_benchmark_{}.db",
+        uuid::Uuid::new_v4()
+    ));
     let store = Store::open(&temp_db)?;
     let paths = Paths::resolve(None, None)?;
     let mut config = Config::load_or_default(&paths.config_file)?;
@@ -453,107 +456,351 @@ async fn main() -> Result<()> {
 
     // Seed comprehensive multi-product, multi-tracker dataset into SQLite
     println!("\n[1/3] Seeding Multi-Product Test Corpus into Local Store...");
-    
+
     // 1. Sunbeam
-    let e_sun1 = create_test_evidence("jira", "issue", "OPEN-4679", "Core OVN BGP distributed routing engine", "In Progress", "sunbeam", "alice@canonical.com", 30, 2);
-    let e_sun2 = create_test_evidence("launchpad", "bug", "2167315", "Kernel routing table packet drops under BGP load", "Fix Committed", "sunbeam-networking", "bob@canonical.com", 25, 3);
-    let e_sun3 = create_test_evidence("github", "pull", "canonical/sunbeam#404", "Add BGP EVPN peering and route reflection", "Open", "canonical/sunbeam", "carol", 20, 1);
+    let e_sun1 = create_test_evidence(
+        "jira",
+        "issue",
+        "OPEN-4679",
+        "Core OVN BGP distributed routing engine",
+        "In Progress",
+        "sunbeam",
+        "alice@canonical.com",
+        30,
+        2,
+    );
+    let e_sun2 = create_test_evidence(
+        "launchpad",
+        "bug",
+        "2167315",
+        "Kernel routing table packet drops under BGP load",
+        "Fix Committed",
+        "sunbeam-networking",
+        "bob@canonical.com",
+        25,
+        3,
+    );
+    let e_sun3 = create_test_evidence(
+        "github",
+        "pull",
+        "canonical/sunbeam#404",
+        "Add BGP EVPN peering and route reflection",
+        "Open",
+        "canonical/sunbeam",
+        "carol",
+        20,
+        1,
+    );
     store.upsert_object(e_sun1.clone()).await?;
     store.upsert_object(e_sun2.clone()).await?;
     store.upsert_object(e_sun3.clone()).await?;
-    store.insert_relations(vec![
-        Relation {
-            from: e_sun1.r#ref.clone(),
-            to: e_sun2.r#ref.clone(),
-            relation_type: "blocked_by".to_string(),
-            detected_by: "jira:native".to_string(),
-            confidence: 1.0,
-        },
-        Relation {
-            from: e_sun3.r#ref.clone(),
-            to: e_sun1.r#ref.clone(),
-            relation_type: "implements".to_string(),
-            detected_by: "github:pr_body".to_string(),
-            confidence: 0.95,
-        },
-    ]).await?;
+    store
+        .insert_relations(vec![
+            Relation {
+                from: e_sun1.r#ref.clone(),
+                to: e_sun2.r#ref.clone(),
+                relation_type: "blocked_by".to_string(),
+                detected_by: "jira:native".to_string(),
+                confidence: 1.0,
+            },
+            Relation {
+                from: e_sun3.r#ref.clone(),
+                to: e_sun1.r#ref.clone(),
+                relation_type: "implements".to_string(),
+                detected_by: "github:pr_body".to_string(),
+                confidence: 0.95,
+            },
+        ])
+        .await?;
 
     // 2. MicroK8s
-    let e_mk1 = create_test_evidence("jira", "issue", "MK8S-101", "Calico eBPF data plane integration", "In Progress", "microk8s", "dev1@canonical.com", 45, 5);
-    let e_mk2 = create_test_evidence("github", "pull", "canonical/microk8s#1234", "Enable eBPF engine for Calico plugin", "Merged", "canonical/microk8s", "contributor1", 40, 4);
-    let mut e_mk3 = create_test_evidence("jira", "issue", "MK8S-999", "Stale cluster sync blocker without updates", "Open", "microk8s", "unassigned", 95, 95);
-    e_mk3.native.insert("priority".to_string(), json!("Blocker"));
+    let e_mk1 = create_test_evidence(
+        "jira",
+        "issue",
+        "MK8S-101",
+        "Calico eBPF data plane integration",
+        "In Progress",
+        "microk8s",
+        "dev1@canonical.com",
+        45,
+        5,
+    );
+    let e_mk2 = create_test_evidence(
+        "github",
+        "pull",
+        "canonical/microk8s#1234",
+        "Enable eBPF engine for Calico plugin",
+        "Merged",
+        "canonical/microk8s",
+        "contributor1",
+        40,
+        4,
+    );
+    let mut e_mk3 = create_test_evidence(
+        "jira",
+        "issue",
+        "MK8S-999",
+        "Stale cluster sync blocker without updates",
+        "Open",
+        "microk8s",
+        "unassigned",
+        95,
+        95,
+    );
+    e_mk3
+        .native
+        .insert("priority".to_string(), json!("Blocker"));
     store.upsert_object(e_mk1.clone()).await?;
     store.upsert_object(e_mk2.clone()).await?;
     store.upsert_object(e_mk3.clone()).await?;
-    store.insert_relations(vec![
-        Relation {
+    store
+        .insert_relations(vec![Relation {
             from: e_mk2.r#ref.clone(),
             to: e_mk1.r#ref.clone(),
             relation_type: "implements".to_string(),
             detected_by: "github:native".to_string(),
             confidence: 0.95,
-        },
-    ]).await?;
+        }])
+        .await?;
 
     // 3. LXD
-    let e_lxd1 = create_test_evidence("github", "issue", "canonical/lxd#8888", "OVN cluster networking failover packet loss", "Open", "canonical/lxd", "lxd-team", 15, 2);
-    let e_lxd2 = create_test_evidence("jira", "issue", "LXD-450", "Live migration memory corruption in clustered VMs", "In Progress", "lxd", "virt-eng@canonical.com", 20, 1);
-    let e_lxd3 = create_test_evidence("jira", "issue", "SEC-LXD-12", "Critical CVE-2026-8812 storage driver buffer overflow", "Open", "lxd", "unassigned", 5, 5);
+    let e_lxd1 = create_test_evidence(
+        "github",
+        "issue",
+        "canonical/lxd#8888",
+        "OVN cluster networking failover packet loss",
+        "Open",
+        "canonical/lxd",
+        "lxd-team",
+        15,
+        2,
+    );
+    let e_lxd2 = create_test_evidence(
+        "jira",
+        "issue",
+        "LXD-450",
+        "Live migration memory corruption in clustered VMs",
+        "In Progress",
+        "lxd",
+        "virt-eng@canonical.com",
+        20,
+        1,
+    );
+    let e_lxd3 = create_test_evidence(
+        "jira",
+        "issue",
+        "SEC-LXD-12",
+        "Critical CVE-2026-8812 storage driver buffer overflow",
+        "Open",
+        "lxd",
+        "unassigned",
+        5,
+        5,
+    );
     store.upsert_object(e_lxd1.clone()).await?;
     store.upsert_object(e_lxd2.clone()).await?;
     store.upsert_object(e_lxd3.clone()).await?;
 
     // 4. Juju
-    let e_ju1 = create_test_evidence("jira", "issue", "JUJU-9001", "Cross-model relation deadlocks in 3.6 controller", "Done", "juju", "juju-dev@canonical.com", 30, 10);
-    let e_ju2 = create_test_evidence("github", "pull", "juju/juju#1890", "Resolve cross-model deadlock during un-relate", "Open", "juju/juju", "juju-core", 25, 2);
-    let e_ju3 = create_test_evidence("launchpad", "bug", "2088123", "Juju secret-backend rotation crashes pebble agent", "Triaged", "juju", "charmed-team", 12, 1);
+    let e_ju1 = create_test_evidence(
+        "jira",
+        "issue",
+        "JUJU-9001",
+        "Cross-model relation deadlocks in 3.6 controller",
+        "Done",
+        "juju",
+        "juju-dev@canonical.com",
+        30,
+        10,
+    );
+    let e_ju2 = create_test_evidence(
+        "github",
+        "pull",
+        "juju/juju#1890",
+        "Resolve cross-model deadlock during un-relate",
+        "Open",
+        "juju/juju",
+        "juju-core",
+        25,
+        2,
+    );
+    let e_ju3 = create_test_evidence(
+        "launchpad",
+        "bug",
+        "2088123",
+        "Juju secret-backend rotation crashes pebble agent",
+        "Triaged",
+        "juju",
+        "charmed-team",
+        12,
+        1,
+    );
     store.upsert_object(e_ju1.clone()).await?;
     store.upsert_object(e_ju2.clone()).await?;
     store.upsert_object(e_ju3.clone()).await?;
-    store.insert_relations(vec![
-        Relation {
+    store
+        .insert_relations(vec![Relation {
             from: e_ju2.r#ref.clone(),
             to: e_ju1.r#ref.clone(),
             relation_type: "fixes".to_string(),
             detected_by: "github:pr_body".to_string(),
             confidence: 0.95,
-        },
-    ]).await?;
+        }])
+        .await?;
 
     // 5. Subiquity
-    let e_sub1 = create_test_evidence("launchpad", "bug", "2054321", "Autoinstall fails with multipath NVMe over TCP", "Confirmed", "subiquity", "installer@canonical.com", 18, 4);
-    let e_sub2 = create_test_evidence("jira", "issue", "SUB-400", "Curtail crash during kernel crashdump configuration", "In Progress", "subiquity", "kernel-team", 10, 1);
+    let e_sub1 = create_test_evidence(
+        "launchpad",
+        "bug",
+        "2054321",
+        "Autoinstall fails with multipath NVMe over TCP",
+        "Confirmed",
+        "subiquity",
+        "installer@canonical.com",
+        18,
+        4,
+    );
+    let e_sub2 = create_test_evidence(
+        "jira",
+        "issue",
+        "SUB-400",
+        "Curtail crash during kernel crashdump configuration",
+        "In Progress",
+        "subiquity",
+        "kernel-team",
+        10,
+        1,
+    );
     store.upsert_object(e_sub1.clone()).await?;
     store.upsert_object(e_sub2.clone()).await?;
 
     // 6. MAAS
-    let e_maas1 = create_test_evidence("launchpad", "bug", "2031199", "PXE DHCP relay over VLAN interfaces fails", "In Progress", "maas", "maas-net@canonical.com", 22, 3);
-    let e_maas2 = create_test_evidence("jira", "issue", "MAAS-777", "PostgreSQL replication lag in secondary region controllers", "Open", "maas", "db-eng", 50, 50);
+    let e_maas1 = create_test_evidence(
+        "launchpad",
+        "bug",
+        "2031199",
+        "PXE DHCP relay over VLAN interfaces fails",
+        "In Progress",
+        "maas",
+        "maas-net@canonical.com",
+        22,
+        3,
+    );
+    let e_maas2 = create_test_evidence(
+        "jira",
+        "issue",
+        "MAAS-777",
+        "PostgreSQL replication lag in secondary region controllers",
+        "Open",
+        "maas",
+        "db-eng",
+        50,
+        50,
+    );
     store.upsert_object(e_maas1.clone()).await?;
     store.upsert_object(e_maas2.clone()).await?;
 
     // 7. Charmed Ceph
-    let e_ceph1 = create_test_evidence("jira", "issue", "CEPH-101", "BlueStore OSD auto-tuning during expansion", "In Progress", "charmed-ceph", "ceph-lead@canonical.com", 14, 2);
-    let e_ceph2 = create_test_evidence("launchpad", "bug", "2044555", "Ceph mon quorum loss during network partition recovery", "Triaged", "charm-ceph-mon", "storage-team", 35, 12);
+    let e_ceph1 = create_test_evidence(
+        "jira",
+        "issue",
+        "CEPH-101",
+        "BlueStore OSD auto-tuning during expansion",
+        "In Progress",
+        "charmed-ceph",
+        "ceph-lead@canonical.com",
+        14,
+        2,
+    );
+    let e_ceph2 = create_test_evidence(
+        "launchpad",
+        "bug",
+        "2044555",
+        "Ceph mon quorum loss during network partition recovery",
+        "Triaged",
+        "charm-ceph-mon",
+        "storage-team",
+        35,
+        12,
+    );
     store.upsert_object(e_ceph1.clone()).await?;
     store.upsert_object(e_ceph2.clone()).await?;
 
     // 8. Anbox Cloud
-    let e_anbox1 = create_test_evidence("jira", "issue", "ANBOX-300", "GPU hardware encoder pipeline stalls under load", "In Progress", "anbox-cloud", "graphics@canonical.com", 8, 1);
-    let e_anbox2 = create_test_evidence("github", "issue", "canonical/anbox-cloud#55", "WebRTC audio rendering latency exceeds 200ms", "Open", "canonical/anbox-cloud", "streamer", 16, 4);
+    let e_anbox1 = create_test_evidence(
+        "jira",
+        "issue",
+        "ANBOX-300",
+        "GPU hardware encoder pipeline stalls under load",
+        "In Progress",
+        "anbox-cloud",
+        "graphics@canonical.com",
+        8,
+        1,
+    );
+    let e_anbox2 = create_test_evidence(
+        "github",
+        "issue",
+        "canonical/anbox-cloud#55",
+        "WebRTC audio rendering latency exceeds 200ms",
+        "Open",
+        "canonical/anbox-cloud",
+        "streamer",
+        16,
+        4,
+    );
     store.upsert_object(e_anbox1.clone()).await?;
     store.upsert_object(e_anbox2.clone()).await?;
 
     // 9. Charmed PostgreSQL
-    let e_pg1 = create_test_evidence("jira", "issue", "PG-500", "Patroni raft consensus failover in multi-region clusters", "In Progress", "charmed-postgresql", "data-platform@canonical.com", 12, 1);
-    let e_pg2 = create_test_evidence("github", "pull", "canonical/postgresql-operator#789", "Fix WAL archiving disk exhaustion guardrail", "Open", "canonical/postgresql-operator", "dbalover", 7, 2);
+    let e_pg1 = create_test_evidence(
+        "jira",
+        "issue",
+        "PG-500",
+        "Patroni raft consensus failover in multi-region clusters",
+        "In Progress",
+        "charmed-postgresql",
+        "data-platform@canonical.com",
+        12,
+        1,
+    );
+    let e_pg2 = create_test_evidence(
+        "github",
+        "pull",
+        "canonical/postgresql-operator#789",
+        "Fix WAL archiving disk exhaustion guardrail",
+        "Open",
+        "canonical/postgresql-operator",
+        "dbalover",
+        7,
+        2,
+    );
     store.upsert_object(e_pg1.clone()).await?;
     store.upsert_object(e_pg2.clone()).await?;
 
     // 10. OpenStack OVN
-    let e_ovn1 = create_test_evidence("jira", "issue", "OVN-999", "Distributed floating IP NAT translation with external BGP", "In Progress", "openstack-ovn", "net-lead@canonical.com", 11, 1);
-    let e_ovn2 = create_test_evidence("launchpad", "bug", "2099001", "OVN geneve tunnel MTU fragmentation drops packets", "Fix Released", "neutron-ovn", "cloud-networking", 60, 5);
+    let e_ovn1 = create_test_evidence(
+        "jira",
+        "issue",
+        "OVN-999",
+        "Distributed floating IP NAT translation with external BGP",
+        "In Progress",
+        "openstack-ovn",
+        "net-lead@canonical.com",
+        11,
+        1,
+    );
+    let e_ovn2 = create_test_evidence(
+        "launchpad",
+        "bug",
+        "2099001",
+        "OVN geneve tunnel MTU fragmentation drops packets",
+        "Fix Released",
+        "neutron-ovn",
+        "cloud-networking",
+        60,
+        5,
+    );
     store.upsert_object(e_ovn1.clone()).await?;
     store.upsert_object(e_ovn2.clone()).await?;
 
@@ -566,7 +813,16 @@ async fn main() -> Result<()> {
     let mut failed = 0;
 
     for q in BENCHMARK_SET {
-        print!("  Q{:02} [{:18}] {:<65} ... ", q.id, q.product, if q.question.len() > 65 { &q.question[..62] } else { q.question });
+        print!(
+            "  Q{:02} [{:18}] {:<65} ... ",
+            q.id,
+            q.product,
+            if q.question.len() > 65 {
+                &q.question[..62]
+            } else {
+                q.question
+            }
+        );
         let _ = std::io::stdout().flush();
         let result = SearchOrchestrator::execute(Arc::clone(&app_state), None, q.question).await;
 
@@ -604,7 +860,9 @@ async fn main() -> Result<()> {
                 // Must reject hallucination if no evidence exists
                 if let Some(ref ans) = result.answer {
                     let lower = ans.to_lowercase();
-                    if !lower.contains("could not find sufficient evidence") && !lower.contains("no evidence") {
+                    if !lower.contains("could not find sufficient evidence")
+                        && !lower.contains("no evidence")
+                    {
                         is_consistent = false;
                         reason = "Did not reject unsupported feature claim".to_string();
                     }
@@ -630,45 +888,83 @@ async fn main() -> Result<()> {
 
     // 3. Test 10 Advanced Intelligence API Capabilities Directly with Complex Scenarios
     println!("\n[3/3] Testing Advanced Intelligence Modules directly...");
-    
+
     // Impact Analysis
     let impact_analyzer = ImpactAnalyzer::new(store.clone());
-    let impact = impact_analyzer.analyze_impact("jira:issue:OPEN-4679").await?;
-    assert!(!impact.items.is_empty(), "Impact analysis must trace downstream dependencies");
-    println!("  ✓ Impact Analysis: verified downstream blast radius calculation ({} items)", impact.total_impacted);
+    let impact = impact_analyzer
+        .analyze_impact("jira:issue:OPEN-4679")
+        .await?;
+    assert!(
+        !impact.items.is_empty(),
+        "Impact analysis must trace downstream dependencies"
+    );
+    println!(
+        "  ✓ Impact Analysis: verified downstream blast radius calculation ({} items)",
+        impact.total_impacted
+    );
 
     // Risk Radar
     let risk_radar = RiskRadar::new(store.clone());
     let risks = risk_radar.scan().await?;
-    assert!(risks.total_risks > 0, "Risk radar must detect engineering risks");
-    println!("  ✓ Risk Radar: detected {} engineering risk items", risks.total_risks);
+    assert!(
+        risks.total_risks > 0,
+        "Risk radar must detect engineering risks"
+    );
+    println!(
+        "  ✓ Risk Radar: detected {} engineering risk items",
+        risks.total_risks
+    );
 
     // Story Reconstruction
     let story_reconstructor = StoryReconstructor::new(store.clone());
-    let timeline = story_reconstructor.reconstruct_timeline("jira:issue:OPEN-4679").await?;
-    assert!(!timeline.events.is_empty(), "Timeline must reconstruct events");
-    println!("  ✓ Timeline Reconstruction: generated {} chronological events", timeline.total_events);
+    let timeline = story_reconstructor
+        .reconstruct_timeline("jira:issue:OPEN-4679")
+        .await?;
+    assert!(
+        !timeline.events.is_empty(),
+        "Timeline must reconstruct events"
+    );
+    println!(
+        "  ✓ Timeline Reconstruction: generated {} chronological events",
+        timeline.total_events
+    );
 
     // Gap Detection
     let gap_detector = GapDetector::new(store.clone());
     let gaps = gap_detector.detect_gaps().await?;
-    assert!(gaps.total_gaps > 0, "Gap detector must identify unmapped work");
-    println!("  ✓ Gap Detector: identified {} engineering gaps", gaps.total_gaps);
+    assert!(
+        gaps.total_gaps > 0,
+        "Gap detector must identify unmapped work"
+    );
+    println!(
+        "  ✓ Gap Detector: identified {} engineering gaps",
+        gaps.total_gaps
+    );
 
     // Watchlists & What Changed
     let wl_service = WatchlistService::new(store.clone());
-    let wl = wl_service.create_watchlist(CreateWatchlistRequest {
-        target_type: "issue".to_string(),
-        target_value: "jira:issue:OPEN-4679".to_string(),
-        title: "Sunbeam OVN Peering".to_string(),
-    }).await?;
-    let changes = wl_service.what_changed_for_object("jira:issue:OPEN-4679").await?;
-    println!("  ✓ Watchlists: verified watchlist delta tracking for target {}", changes.object_key);
+    let _wl = wl_service
+        .create_watchlist(CreateWatchlistRequest {
+            target_type: "issue".to_string(),
+            target_value: "jira:issue:OPEN-4679".to_string(),
+            title: "Sunbeam OVN Peering".to_string(),
+        })
+        .await?;
+    let changes = wl_service
+        .what_changed_for_object("jira:issue:OPEN-4679")
+        .await?;
+    println!(
+        "  ✓ Watchlists: verified watchlist delta tracking for target {}",
+        changes.object_key
+    );
 
     // Readiness Assessment
     let readiness_eval = ReadinessEvaluator::new(store.clone());
     let readiness = readiness_eval.assess_readiness("sunbeam").await?;
-    println!("  ✓ Readiness Assessment: verdict={}, score={:.1}%", readiness.verdict, readiness.readiness_score);
+    println!(
+        "  ✓ Readiness Assessment: verdict={}, score={:.1}%",
+        readiness.verdict, readiness.readiness_score
+    );
 
     // Confidence Calculation
     let rels = vec![Relation {
@@ -679,7 +975,10 @@ async fn main() -> Result<()> {
         confidence: 1.0,
     }];
     let conf = calculate_confidence(&[e_sun1.clone(), e_sun2.clone()], &rels, 0, 0);
-    println!("  ✓ Confidence Signal: level={}, score={:.2}", conf.level, conf.score);
+    println!(
+        "  ✓ Confidence Signal: level={}, score={:.2}",
+        conf.level, conf.score
+    );
 
     // MCP Tools Execution
     let mcp_res = handle_mcp_request(
@@ -692,17 +991,26 @@ async fn main() -> Result<()> {
                 "name": "risk_radar",
                 "arguments": {}
             }
-        })
-    ).await;
-    assert!(mcp_res.is_some() && mcp_res.unwrap().get("result").is_some(), "MCP tool execution must return valid JSON-RPC result");
+        }),
+    )
+    .await;
+    assert!(
+        mcp_res.is_some() && mcp_res.unwrap().get("result").is_some(),
+        "MCP tool execution must return valid JSON-RPC result"
+    );
     println!("  ✓ MCP Protocol: dynamically executed tools/call (risk_radar)");
 
     println!("\n================================================================================");
-    println!("     BENCHMARK SUMMARY: {} / 50 QUESTIONS PASSED ({} Failed)                    ", passed, failed);
+    println!(
+        "     BENCHMARK SUMMARY: {} / 50 QUESTIONS PASSED ({} Failed)                    ",
+        passed, failed
+    );
     println!("================================================================================");
 
     if failed == 0 {
-        println!("All 50 questions across 10 products passed successfully with consistent responses.");
+        println!(
+            "All 50 questions across 10 products passed successfully with consistent responses."
+        );
     } else {
         anyhow::bail!("Benchmark encountered {} test failures", failed);
     }

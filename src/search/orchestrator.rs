@@ -860,7 +860,12 @@ impl SearchOrchestrator {
                 Ok(resp) => Some(resp),
                 Err(e) => {
                     eprintln!("Synthesis chat_completion error: {e:#}");
-                    Self::synthesize_deterministic_fallback(query, &final_ranked, &findings, &warnings)
+                    Self::synthesize_deterministic_fallback(
+                        query,
+                        &final_ranked,
+                        &findings,
+                        &warnings,
+                    )
                 }
             }
         } else {
