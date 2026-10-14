@@ -1451,7 +1451,11 @@ impl Store {
                 .query_row("SELECT COUNT(*) FROM concepts", [], |r| r.get(0))
                 .unwrap_or(0);
             let indexed_concepts: i64 = conn
-                .query_row("SELECT COUNT(*) FROM concept_index WHERE status = 'done'", [], |r| r.get(0))
+                .query_row(
+                    "SELECT COUNT(*) FROM concept_index WHERE status = 'done'",
+                    [],
+                    |r| r.get(0),
+                )
                 .unwrap_or(0);
             let total_concept_links: i64 = conn
                 .query_row("SELECT COUNT(*) FROM concept_links", [], |r| r.get(0))
@@ -1529,7 +1533,10 @@ impl Store {
                      ORDER BY COUNT(DISTINCT oc.object_key) DESC, c.name ASC
                      LIMIT 10",
                 )?;
-                let c_rows = cstmt.query_map(rusqlite::params![&item.source, &item.container], |r| r.get::<_, String>(0))?;
+                let c_rows = cstmt
+                    .query_map(rusqlite::params![&item.source, &item.container], |r| {
+                        r.get::<_, String>(0)
+                    })?;
                 for n in c_rows.flatten() {
                     item.top_concepts.push(n);
                 }
@@ -2561,21 +2568,29 @@ impl Store {
     }
 
     /// Check if object is already indexed with given content_hash
-    pub async fn get_concept_index_status(&self, object_key: &str) -> Result<Option<(String, String)>> {
+    pub async fn get_concept_index_status(
+        &self,
+        object_key: &str,
+    ) -> Result<Option<(String, String)>> {
         let key = object_key.to_string();
         self.call(move |conn| {
-            let res = conn.query_row(
-                "SELECT content_hash, status FROM concept_index WHERE object_key = ?1",
-                rusqlite::params![&key],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            ).ok();
+            let res = conn
+                .query_row(
+                    "SELECT content_hash, status FROM concept_index WHERE object_key = ?1",
+                    rusqlite::params![&key],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .ok();
             Ok(res)
         })
         .await
     }
 
     /// Get all concepts linked to an object ordered by weight desc
-    pub async fn get_concepts_for_object(&self, object_key: &str) -> Result<Vec<ObjectConceptRecord>> {
+    pub async fn get_concepts_for_object(
+        &self,
+        object_key: &str,
+    ) -> Result<Vec<ObjectConceptRecord>> {
         let key = object_key.to_string();
         self.call(move |conn| {
             let mut stmt = conn.prepare(
@@ -2639,7 +2654,11 @@ impl Store {
     }
 
     /// List top concepts for a specific container/source
-    pub async fn list_top_concepts_for_source(&self, source: &str, limit: usize) -> Result<Vec<ConceptRecord>> {
+    pub async fn list_top_concepts_for_source(
+        &self,
+        source: &str,
+        limit: usize,
+    ) -> Result<Vec<ConceptRecord>> {
         let src = source.to_string();
         self.call(move |conn| {
             let mut stmt = conn.prepare(
@@ -2674,7 +2693,11 @@ impl Store {
     }
 
     /// Get related concepts through co-occurrence graph
-    pub async fn get_related_concepts(&self, concept_id: i64, limit: usize) -> Result<Vec<(ConceptRecord, i64)>> {
+    pub async fn get_related_concepts(
+        &self,
+        concept_id: i64,
+        limit: usize,
+    ) -> Result<Vec<(ConceptRecord, i64)>> {
         self.call(move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT c.concept_id, c.name, c.kind, c.first_seen, c.last_seen, c.object_count, cl.co_occurrence
@@ -2710,16 +2733,30 @@ impl Store {
     /// Retrieve total concept count and indexed object count
     pub async fn get_concept_stats(&self) -> Result<(i64, i64, i64)> {
         self.call(|conn| {
-            let total_concepts: i64 = conn.query_row("SELECT COUNT(*) FROM concepts", [], |r| r.get(0)).unwrap_or(0);
-            let indexed_objects: i64 = conn.query_row("SELECT COUNT(*) FROM concept_index WHERE status = 'done'", [], |r| r.get(0)).unwrap_or(0);
-            let total_links: i64 = conn.query_row("SELECT COUNT(*) FROM concept_links", [], |r| r.get(0)).unwrap_or(0);
+            let total_concepts: i64 = conn
+                .query_row("SELECT COUNT(*) FROM concepts", [], |r| r.get(0))
+                .unwrap_or(0);
+            let indexed_objects: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM concept_index WHERE status = 'done'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            let total_links: i64 = conn
+                .query_row("SELECT COUNT(*) FROM concept_links", [], |r| r.get(0))
+                .unwrap_or(0);
             Ok((total_concepts, indexed_objects, total_links))
         })
         .await
     }
 
     /// Search concepts by FTS
-    pub async fn search_concepts_fts(&self, query: &str, limit: usize) -> Result<Vec<ConceptRecord>> {
+    pub async fn search_concepts_fts(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<ConceptRecord>> {
         let clean = query.trim().to_lowercase();
         if clean.is_empty() {
             return Ok(Vec::new());
@@ -2766,7 +2803,11 @@ impl Store {
     }
 
     /// Find objects that share a concept
-    pub async fn get_objects_for_concept(&self, concept_id: i64, limit: usize) -> Result<Vec<(String, f64)>> {
+    pub async fn get_objects_for_concept(
+        &self,
+        concept_id: i64,
+        limit: usize,
+    ) -> Result<Vec<(String, f64)>> {
         self.call(move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT object_key, weight FROM object_concepts
@@ -3070,40 +3111,38 @@ mod tests {
 
         // 1. Upsert concepts
         let cid1 = store.upsert_concept("ovn bgp", "component").await.unwrap();
-        let cid2 = store.upsert_concept("bgp evpn", "technology").await.unwrap();
+        let cid2 = store
+            .upsert_concept("bgp evpn", "technology")
+            .await
+            .unwrap();
         assert!(cid1 > 0);
         assert!(cid2 > 0);
 
         // 2. Link object to concept
         store
-            .link_object_concept(
-                "jira:issue:OPEN-123",
-                cid1,
-                0.9,
-                "title",
-                "hash1",
-            )
+            .link_object_concept("jira:issue:OPEN-123", cid1, 0.9, "title", "hash1")
             .await
             .unwrap();
 
         store
-            .link_object_concept(
-                "jira:issue:OPEN-123",
-                cid2,
-                0.8,
-                "body",
-                "hash1",
-            )
+            .link_object_concept("jira:issue:OPEN-123", cid2, 0.8, "body", "hash1")
             .await
             .unwrap();
 
         // 3. Link concept pair co-occurrence
-        let (a, b) = if cid1 < cid2 { (cid1, cid2) } else { (cid2, cid1) };
+        let (a, b) = if cid1 < cid2 {
+            (cid1, cid2)
+        } else {
+            (cid2, cid1)
+        };
         store.link_concept_pair(a, b).await.unwrap();
         store.link_concept_pair(a, b).await.unwrap(); // co-occurrence should become 2
 
         // 4. Query concepts for object
-        let ocs = store.get_concepts_for_object("jira:issue:OPEN-123").await.unwrap();
+        let ocs = store
+            .get_concepts_for_object("jira:issue:OPEN-123")
+            .await
+            .unwrap();
         assert_eq!(ocs.len(), 2);
         assert_eq!(ocs[0].concept_name, "ovn bgp");
 
@@ -3132,4 +3171,3 @@ mod tests {
         assert_eq!(indexed_objs2, 1);
     }
 }
-

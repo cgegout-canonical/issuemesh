@@ -1,5 +1,5 @@
-pub mod config;
 pub mod concepts;
+pub mod config;
 pub mod connectors;
 pub mod intelligence;
 pub mod introspection;

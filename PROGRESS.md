@@ -22,3 +22,7 @@ stage 9 | done | Embeddings + hybrid ranking | 7279885
 stage 10 | done | Deep search + consistency | b67f229
 stage 11 | done | Results UI, Memory, Sources, run page | 2dab5df
 stage 12 | done | Hardening, release, e2e | 61366e3
+stage 13.1 | done | Concept layer: schema v4, extraction queue & worker | a4f4a24
+stage 13.2 | done | Concept layer: retrieval & hybrid ranking | 555af53
+stage 13.3 | done | Concept layer: UI, MCP tools & intelligence hooks | 98b6c43
+stage 13.4 | done | Concept layer: benchmarks, docs & packaging | current

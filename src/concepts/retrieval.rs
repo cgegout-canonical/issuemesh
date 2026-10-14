@@ -24,7 +24,9 @@ pub async fn concept_search(
     let mut results = Vec::new();
 
     for (idx, concept) in fts_hits.into_iter().enumerate() {
-        let matching_objects = store.get_objects_for_concept(concept.concept_id, 20).await?;
+        let matching_objects = store
+            .get_objects_for_concept(concept.concept_id, 20)
+            .await?;
         let rank_score = (1.0 - (idx as f32 * 0.05)).max(0.2);
         results.push(ConceptSearchResult {
             concept,
@@ -91,8 +93,14 @@ pub fn compute_pairwise_concept_overlap(
         return 0.0;
     }
 
-    let map_a: HashMap<i64, f64> = concepts_a.iter().map(|c| (c.concept_id, c.weight)).collect();
-    let map_b: HashMap<i64, f64> = concepts_b.iter().map(|c| (c.concept_id, c.weight)).collect();
+    let map_a: HashMap<i64, f64> = concepts_a
+        .iter()
+        .map(|c| (c.concept_id, c.weight))
+        .collect();
+    let map_b: HashMap<i64, f64> = concepts_b
+        .iter()
+        .map(|c| (c.concept_id, c.weight))
+        .collect();
 
     let mut intersection = 0.0;
     let mut union = 0.0;

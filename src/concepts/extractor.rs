@@ -1,7 +1,7 @@
-use anyhow::{bail, Context, Result};
+use crate::concepts::types::{ExtractedConcept, ExtractionPayload};
 use crate::connectors::Evidence;
 use crate::model::{ChatMessage, ModelClient, CONCEPT_EXTRACT_V1};
-use crate::concepts::types::{ExtractedConcept, ExtractionPayload};
+use anyhow::{bail, Context, Result};
 
 pub struct ConceptExtractor;
 
@@ -30,10 +30,7 @@ impl ConceptExtractor {
     pub fn normalise_name(raw: &str, object_key: &str) -> Option<String> {
         let trimmed = raw.trim().to_lowercase();
         // collapse whitespace
-        let collapsed: String = trimmed
-            .split_whitespace()
-            .collect::<Vec<&str>>()
-            .join(" ");
+        let collapsed: String = trimmed.split_whitespace().collect::<Vec<&str>>().join(" ");
 
         // strip trailing / leading punctuation
         let stripped = collapsed
@@ -46,7 +43,9 @@ impl ConceptExtractor {
 
         // Drop names matching the object's own key
         let lower_key = object_key.to_lowercase();
-        if stripped == lower_key || lower_key.contains(&stripped) && stripped.len() >= lower_key.len() {
+        if stripped == lower_key
+            || lower_key.contains(&stripped) && stripped.len() >= lower_key.len()
+        {
             return None;
         }
 

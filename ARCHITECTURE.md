@@ -113,3 +113,24 @@ User Query ──► [Query Intent Parser]
 - **Optional & Pluggable**: Synthesis and embedding modules connect to OpenAI-compatible endpoints (local Ollama, vLLM, or remote cloud providers).
 - **Graceful Offline Fallback**: If the model server is unreachable, IssueMesh falls back immediately to deterministic heuristic summaries and BM25 graph evidence ranking without throwing errors.
 - **Zero Hallucination Anchor**: Synthesis prompts explicitly cite object identifiers (`github:foo#12`, `jira:BAR-20`). The UI links citations directly to verified tracker URLs.
+
+---
+
+## 7. Native Concept Layer & Derived Knowledge Invariant
+
+The **Native Concept Layer** extracts, links, and indexes domain-specific concepts across disparate tracker silos without altering authoritative state:
+
+### Storage Schema (v4 Migrations)
+- **`concepts`**: Canonical concepts with `name`, `kind` (`component`, `feature`, `technology`, `problem`, `release`, `team`, `other`), `object_count`, `first_seen`, `last_seen`.
+- **`object_concepts`**: Association table linking objects to concepts with extraction weight `[0.0, 1.0]`, source field (`title`, `body`, `comments`), content hash, and timestamp.
+- **`concept_links`**: Co-occurrence graph representing pairings of concepts co-located on the same engineering objects (`a < b` invariant).
+- **`concept_index`**: Object indexing ledger (`pending`, `done`, `failed`, `skipped`) with attempt counts, token tracking, and error taxonomy.
+- **`concepts_fts`**: SQLite FTS5 index over concept names for sub-millisecond lexical prefix and keyword discovery.
+
+### Invariants & Non-Authoritative Guardrails
+1. **Authoritative Primacy**: SQLite tracker objects and native relationships (`jira:native`, `github:native`) remain authoritative. Concepts are strictly **derived knowledge**.
+2. **Capped Confidence**: Concept-inferred relationships use `detected_by = "concept"` and are capped at confidence $\le 0.70$ (e.g. `same_problem` relations use `0.60`). Native tracker relationships retain $1.00$ and strictly outrank derived links.
+3. **Freshness Citation Barrier**: A concept match is only cited after resolving to an authoritative object that has passed standard freshness verification.
+4. **Hybrid Ranking Fusion**: When concepts are enabled, semantic scores for candidates are computed as $\max(\text{embedding\_cosine}, \text{concept\_overlap\_score})$.
+5. **Decoupled Asynchronous Worker**: Background token-budgeted queue (`tokio::sync::mpsc`) extracts concepts via versioned prompt `concept_extract_v1`. If the LLM is unreachable or disabled, extraction jobs queue gracefully while search, workbench, MCP tools, and APIs continue serving existing indices.
+

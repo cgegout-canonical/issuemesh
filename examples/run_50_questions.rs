@@ -450,6 +450,38 @@ async fn main() -> Result<()> {
     config.github.enabled = false;
     config.launchpad.enabled = false;
     config.model.enabled = false;
+
+    // Check CLI arguments and environment variables for concepts toggling
+    let args: Vec<String> = std::env::args().collect();
+    if let Ok(val) = std::env::var("ISSUEMESH_CONCEPTS") {
+        config.concepts.enabled =
+            val == "1" || val.to_lowercase() == "true" || val.to_lowercase() == "on";
+    }
+    for arg in &args {
+        if arg == "--concepts=on" || arg == "--concepts-on" {
+            config.concepts.enabled = true;
+        } else if arg == "--concepts=off" || arg == "--concepts-off" {
+            config.concepts.enabled = false;
+        }
+    }
+    for i in 0..args.len() {
+        if args[i] == "--concepts" && i + 1 < args.len() {
+            if args[i + 1] == "on" || args[i + 1] == "true" || args[i + 1] == "1" {
+                config.concepts.enabled = true;
+            } else if args[i + 1] == "off" || args[i + 1] == "false" || args[i + 1] == "0" {
+                config.concepts.enabled = false;
+            }
+        }
+    }
+    println!(
+        "Native Concept Layer: {}",
+        if config.concepts.enabled {
+            "ENABLED"
+        } else {
+            "DISABLED"
+        }
+    );
+
     let secrets = Secrets::default();
 
     let app_state = Arc::new(AppState::new(paths.clone(), config, secrets, store.clone()));
@@ -804,6 +836,70 @@ async fn main() -> Result<()> {
     store.upsert_object(e_ovn1.clone()).await?;
     store.upsert_object(e_ovn2.clone()).await?;
 
+    // Seed domain concepts if concepts feature is enabled
+    if app_state.config.read().await.concepts.enabled {
+        let c_bgp = store.upsert_concept("bgp", "protocol").await?;
+        let c_ovn = store.upsert_concept("ovn", "component").await?;
+        let c_ebpf = store.upsert_concept("ebpf", "technology").await?;
+        let c_lm = store.upsert_concept("live-migration", "feature").await?;
+        let c_cm = store.upsert_concept("cross-model", "feature").await?;
+
+        store
+            .link_object_concept("jira:issue:OPEN-4679", c_bgp, 0.95, "title", "seed_hash")
+            .await?;
+        store
+            .link_object_concept("jira:issue:OPEN-4679", c_ovn, 0.90, "title", "seed_hash")
+            .await?;
+        store
+            .link_object_concept("launchpad:bug:2167315", c_bgp, 0.85, "title", "seed_hash")
+            .await?;
+        store
+            .link_object_concept("jira:issue:OVN-999", c_bgp, 0.90, "title", "seed_hash")
+            .await?;
+        store
+            .link_object_concept("jira:issue:OVN-999", c_ovn, 0.95, "title", "seed_hash")
+            .await?;
+        store
+            .link_object_concept(
+                "github:issue:canonical/lxd#8888",
+                c_ovn,
+                0.80,
+                "title",
+                "seed_hash",
+            )
+            .await?;
+        store
+            .link_object_concept("jira:issue:MK8S-101", c_ebpf, 0.95, "title", "seed_hash")
+            .await?;
+        store
+            .link_object_concept(
+                "github:pull:canonical/microk8s#1234",
+                c_ebpf,
+                0.95,
+                "title",
+                "seed_hash",
+            )
+            .await?;
+        store
+            .link_object_concept("jira:issue:LXD-450", c_lm, 0.95, "title", "seed_hash")
+            .await?;
+        store
+            .link_object_concept("jira:issue:JUJU-9001", c_cm, 0.90, "title", "seed_hash")
+            .await?;
+        store
+            .link_object_concept(
+                "github:pull:juju/juju#1890",
+                c_cm,
+                0.90,
+                "title",
+                "seed_hash",
+            )
+            .await?;
+
+        store.link_concept_pair(c_bgp, c_ovn).await?;
+        println!("Seeded 5 domain concepts and cross-tracker links.");
+    }
+
     println!("Seeded 22 authoritative multi-source objects across 10 products successfully.");
 
     // Run All 50 Questions and Verify
@@ -999,6 +1095,26 @@ async fn main() -> Result<()> {
         "MCP tool execution must return valid JSON-RPC result"
     );
     println!("  ✓ MCP Protocol: dynamically executed tools/call (risk_radar)");
+
+    // MCP concepts and semantic_related tool execution verification
+    let mcp_concepts = handle_mcp_request(
+        app_state.clone(),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 43,
+            "method": "tools/call",
+            "params": {
+                "name": "concepts",
+                "arguments": { "query": "bgp" }
+            }
+        }),
+    )
+    .await;
+    assert!(
+        mcp_concepts.is_some() && mcp_concepts.unwrap().get("result").is_some(),
+        "MCP tool 'concepts' execution must return valid JSON-RPC result"
+    );
+    println!("  ✓ MCP Protocol: dynamically executed tools/call (concepts)");
 
     println!("\n================================================================================");
     println!(

@@ -26,10 +26,11 @@
 13. [Workbench, Memory, Health, Tutorial & Intelligence Pages](#13-workbench-memory-health-tutorial--intelligence-pages)
 14. [Continuous Introspection Engine](#14-continuous-introspection-engine)
 15. [Testing & Multi-Product Benchmark Suites (30-Test & 50-Question)](#15-testing--multi-product-benchmark-suites-30-test--50-question)
-16. [Portability & Canonical Snap Package](#16-portability--canonical-snap-package)
-17. [Known Limitations](#17-known-limitations)
-18. [Developer Instructions](#18-developer-instructions)
-19. [License](#19-license)
+16. [Native Concept Layer & Domain Knowledge Graph](#16-native-concept-layer--domain-knowledge-graph)
+17. [Portability & Canonical Snap Package](#17-portability--canonical-snap-package)
+18. [Known Limitations](#18-known-limitations)
+19. [Developer Instructions](#19-developer-instructions)
+20. [License](#20-license)
 
 ---
 
@@ -49,6 +50,7 @@ Navigating complex technical initiatives often requires correlating tickets acro
 - Providing concise, strictly evidence-backed answers (≤ 250 words) with zero hallucination.
 - Retaining all query memory locally in SQLite with full-text search (FTS5) and vector embeddings.
 - Providing 10 built-in engineering intelligence superpowers and a native Model Context Protocol (MCP) server.
+- Extracting and linking domain concepts in a **Native Concept Layer** with zero external dependencies.
 - Strictly adhering to Canonical design and typography rules with clear visual hierarchy, markdown tables, callout badges, and high-contrast Canonical Slate and Orange palettes.
 
 ---
@@ -58,6 +60,7 @@ Navigating complex technical initiatives often requires correlating tickets acro
 - **Federated Multi-Tracker Retrieval**: Concurrently queries GitHub, Jira, and Launchpad APIs alongside local cached memory.
 - **Strict Read-Only Enforcement**: Guaranteed by architecture and compile-time barriers; IssueMesh cannot modify or delete remote tracker records.
 - **Deterministic Evidence Synthesis**: Constrained LLM analysis engine strictly forbidden from inventing objects, statuses, or relationships. If evidence is insufficient, it explicitly reports that limitation.
+- **Native Concept Layer**: Automatically extracts domain concepts (`component`, `feature`, `technology`, `problem`) and indexes co-occurrences and semantic relationships across disparate tracker silos. Concepts remain strictly derived knowledge and never mutate or overwrite authoritative tracker records.
 - **Automated Relationship Extraction**: Identifies cross-references from commit messages, issue descriptions, and comments (`LP#123456`, `PROJ-789`, `org/repo#123`, URLs).
 - **Cross-System Consistency Engine**: Detects workflow anomalies, such as tickets closed ahead of their code implementations or divergent milestone assignments.
 - **Dynamic Model Discovery**: Queries OpenAI-compatible endpoints (`/v1/models`) on credentials entry, dynamically populating normalized model dropdowns without hardcoding.
@@ -199,7 +202,7 @@ Connect using the HTTP endpoint:
 - **Server URL**: `http://127.0.0.1:8765/api/mcp`
 - **Protocol**: JSON-RPC 2.0
 
-### Advertised MCP Tools (16 Tools)
+### Advertised MCP Tools (18 Tools)
 
 | Tool Name | Parameters | Description |
 |---|---|---|
@@ -216,9 +219,12 @@ Connect using the HTTP endpoint:
 | `find_gaps` | `container?`, `gap_type?` | Detect governance gaps: requirements without PRs, merged code without release proof, and dangling references. |
 | `consistency_check` | `keys?` | Scan cross-tracker relationships for contradictory workflow states. |
 | `saved_investigation` | `action`, `id?`, `name?`, `query?` | Save, retrieve, or reopen an investigation with live diff highlighting. |
+| `concepts` | `query?`, `limit?`, `offset?` | Search or list extracted domain concepts with occurrence statistics and matching tracker objects. |
+| `semantic_related` | `key`, `min_score?`, `limit?` | Discover semantically related objects sharing domain concepts across trackers with confidence $\le 0.70$. |
 | `memory_stats` | *(none)* | Inspect local SQLite datastore metrics, cached object counts, and index sizes. |
 | `health` | *(none)* | Check tracker connectivity, API response latencies, and system health. |
 | `introspection_status` | *(none)* | Query autonomous self-challenge quality scores, pass rates, and recent runs. |
+
 
 ---
 
@@ -552,7 +558,25 @@ CFLAGS="-fno-sanitize=undefined -fwrapv" cargo run --example run_50_questions
 
 ---
 
-## 16. Portability & Canonical Snap Package
+## 16. Native Concept Layer & Domain Knowledge Graph
+
+IssueMesh v1.0.0 features a native, local-first **Domain Concept Layer** that extracts high-level engineering concepts (`component`, `feature`, `technology`, `problem`, `release`, `team`) from tracker objects using bounded background LLM workers and SQLite datastore tables:
+
+### Key Highlights
+- **Derived Knowledge Invariant**: Authoritative tracker states, assignees, dates, and relations remain authoritative. Concepts are purely derived knowledge, surfacing candidate links and explaining cross-tracker overlaps without mutating raw records.
+- **Cross-Tracker Duplicate Work Detection**: The `find_gaps` engine and UI leverage domain concept overlap to identify duplicate work being developed across different teams and trackers (e.g. Jira epic vs GitHub pull request) with $\ge 70\%$ concept overlap.
+- **Capped Confidence**: Inferred relationships (such as `same_problem`) use `detected_by = "concept"` and carry confidence $\le 0.70$ ($0.60$ for `same_problem`), ensuring authoritative tracker links ($1.00$) always outrank them.
+- **Hybrid Retrieval Fusion**: Candidate ranking blends lexical (FTS5) BM25 scores with $\max(\text{embedding\_cosine}, \text{concept\_score})$.
+- **Web UI & REST Endpoints**:
+  - `GET /concepts`: Dedicated Domain Concept Graph browser with search, category filtering, and object link counts.
+  - `GET /api/concepts`: Returns indexed domain concepts with pagination and query filtering.
+  - `GET /api/concepts/:id/related`: Returns co-occurring concepts and linked tracker objects.
+  - `GET /api/concepts/object/*key`: Returns domain concepts extracted for a given object key.
+- **MCP Integration**: Exposes `concepts` (search and list domain concepts) and `semantic_related` (find cross-tracker objects sharing domain concepts).
+
+---
+
+## 17. Portability & Canonical Snap Package
 
 The application has been bumped to **v1.0.0** and packaged into a self-contained, strictly confined Canonical Snap package:
 

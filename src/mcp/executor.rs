@@ -329,7 +329,8 @@ pub async fn execute_tool(state: Arc<AppState>, tool_name: &str, args: Value) ->
             let source = args.get("source").and_then(|v| v.as_str());
             let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
 
-            let (total_concepts, indexed_objects, total_links) = state.store.get_concept_stats().await?;
+            let (total_concepts, indexed_objects, total_links) =
+                state.store.get_concept_stats().await?;
 
             let concepts = if let Some(q) = query {
                 state.store.search_concepts_fts(q, limit).await?
@@ -371,7 +372,8 @@ pub async fn execute_tool(state: Arc<AppState>, tool_name: &str, args: Value) ->
                         }
                     }
                 }
-                related_keys.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                related_keys
+                    .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
                 related_keys.truncate(limit);
 
                 Ok(json!({
@@ -380,7 +382,9 @@ pub async fn execute_tool(state: Arc<AppState>, tool_name: &str, args: Value) ->
                     "semantic_neighbors": related_keys.into_iter().map(|(k, w)| json!({ "object_key": k, "concept_weight": w })).collect::<Vec<_>>(),
                 }))
             } else {
-                Err(anyhow!("Provide either 'concept_id' or 'object_key' parameter"))
+                Err(anyhow!(
+                    "Provide either 'concept_id' or 'object_key' parameter"
+                ))
             }
         }
 

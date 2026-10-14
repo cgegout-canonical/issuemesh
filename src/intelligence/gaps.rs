@@ -204,7 +204,8 @@ impl GapDetector {
         }
 
         // 5. Semantic Duplicated Work across Different Trackers (via Concept Overlap >= 0.70)
-        let mut obj_concepts: HashMap<String, Vec<crate::store::ObjectConceptRecord>> = HashMap::new();
+        let mut obj_concepts: HashMap<String, Vec<crate::store::ObjectConceptRecord>> =
+            HashMap::new();
         for obj in &all_objects {
             let key = obj.r#ref.to_key();
             if let Ok(ocs) = self.store.get_concepts_for_object(&key).await {

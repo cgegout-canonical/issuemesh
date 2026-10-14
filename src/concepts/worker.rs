@@ -3,11 +3,11 @@ use std::time::Duration;
 use tokio::sync::{mpsc, RwLock, Semaphore};
 use tracing::{debug, error, info, warn};
 
+use crate::concepts::extractor::ConceptExtractor;
 use crate::config::{Config, Secrets};
 use crate::connectors::Evidence;
 use crate::model::ModelClient;
 use crate::store::Store;
-use crate::concepts::extractor::ConceptExtractor;
 
 pub struct ConceptJob {
     pub evidence: Evidence,
@@ -63,7 +63,10 @@ impl ConceptWorker {
         while let Some(job) = self.rx.recv().await {
             let cfg = self.config.read().await.clone();
             if !cfg.concepts.enabled {
-                debug!("Concept extraction is disabled; skipping job {}", job.evidence.r#ref.to_key());
+                debug!(
+                    "Concept extraction is disabled; skipping job {}",
+                    job.evidence.r#ref.to_key()
+                );
                 continue;
             }
 
@@ -73,41 +76,83 @@ impl ConceptWorker {
             match self.store.get_concept_index_status(&object_key).await {
                 Ok(Some(status)) => {
                     if status.0 == job.content_hash && status.1 == "done" {
-                        debug!("Object {} content_hash unchanged and already indexed; skipping", object_key);
-                        let _ = self.store.update_concept_index(&object_key, &job.content_hash, "skipped", 0, None).await;
+                        debug!(
+                            "Object {} content_hash unchanged and already indexed; skipping",
+                            object_key
+                        );
+                        let _ = self
+                            .store
+                            .update_concept_index(
+                                &object_key,
+                                &job.content_hash,
+                                "skipped",
+                                0,
+                                None,
+                            )
+                            .await;
                         continue;
                     }
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    warn!("Failed to query concept index status for {}: {e}", object_key);
+                    warn!(
+                        "Failed to query concept index status for {}: {e}",
+                        object_key
+                    );
                 }
             }
 
             // 2. Check token budget
             if let Ok(used_today) = self.store.get_concept_tokens_used_today().await {
                 if used_today >= cfg.concepts.daily_token_budget {
-                    warn!("Daily concept token budget reached ({}/{} tokens); skipping object {}", used_today, cfg.concepts.daily_token_budget, object_key);
-                    let _ = self.store.update_concept_index(&object_key, &job.content_hash, "skipped", 0, Some("budget_exceeded")).await;
+                    warn!(
+                        "Daily concept token budget reached ({}/{} tokens); skipping object {}",
+                        used_today, cfg.concepts.daily_token_budget, object_key
+                    );
+                    let _ = self
+                        .store
+                        .update_concept_index(
+                            &object_key,
+                            &job.content_hash,
+                            "skipped",
+                            0,
+                            Some("budget_exceeded"),
+                        )
+                        .await;
                     continue;
                 }
             }
 
             // 3. Check if model is configured
             let sec = self.secrets.read().await.clone();
-            let base_url = sec.openai_base_url.as_deref().or(cfg.model.base_url.as_deref());
+            let base_url = sec
+                .openai_base_url
+                .as_deref()
+                .or(cfg.model.base_url.as_deref());
             let model_name = sec.openai_model.as_deref().or(cfg.model.model.as_deref());
 
             let (base_url, model_name) = match (base_url, model_name) {
-                (Some(b), Some(m)) if cfg.model.enabled || sec.openai_api_key.is_some() => (b.to_string(), m.to_string()),
+                (Some(b), Some(m)) if cfg.model.enabled || sec.openai_api_key.is_some() => {
+                    (b.to_string(), m.to_string())
+                }
                 _ => {
                     debug!("Model client not configured for concept extraction; marking pending for {}", object_key);
-                    let _ = self.store.update_concept_index(&object_key, &job.content_hash, "pending", 0, Some("model_unavailable")).await;
+                    let _ = self
+                        .store
+                        .update_concept_index(
+                            &object_key,
+                            &job.content_hash,
+                            "pending",
+                            0,
+                            Some("model_unavailable"),
+                        )
+                        .await;
                     continue;
                 }
             };
 
-            let embedding_model = sec.openai_embedding_model
+            let embedding_model = sec
+                .openai_embedding_model
                 .or(cfg.model.embedding_model)
                 .unwrap_or_else(|| "text-embedding-3-small".to_string());
 
@@ -121,7 +166,16 @@ impl ConceptWorker {
                 Ok(c) => c,
                 Err(e) => {
                     warn!("Failed to build ModelClient for concept extraction: {e}");
-                    let _ = self.store.update_concept_index(&object_key, &job.content_hash, "failed", 0, Some("client_error")).await;
+                    let _ = self
+                        .store
+                        .update_concept_index(
+                            &object_key,
+                            &job.content_hash,
+                            "failed",
+                            0,
+                            Some("client_error"),
+                        )
+                        .await;
                     continue;
                 }
             };
@@ -145,13 +199,15 @@ impl ConceptWorker {
                             match store.upsert_concept(&item.name, &item.kind).await {
                                 Ok(cid) => {
                                     concept_ids.push(cid);
-                                    let _ = store.link_object_concept(
-                                        &object_key,
-                                        cid,
-                                        item.weight,
-                                        "title|body|comments",
-                                        &job.content_hash,
-                                    ).await;
+                                    let _ = store
+                                        .link_object_concept(
+                                            &object_key,
+                                            cid,
+                                            item.weight,
+                                            "title|body|comments",
+                                            &job.content_hash,
+                                        )
+                                        .await;
                                 }
                                 Err(e) => {
                                     error!("Failed to upsert concept '{}': {e}", item.name);
@@ -172,15 +228,24 @@ impl ConceptWorker {
                         }
 
                         // Approximate tokens: input text / 4 + output tokens
-                        let tokens_used = (job.evidence.title.len() + job.evidence.body.as_deref().unwrap_or("").len()) / 4 + 100;
-                        let _ = store.update_concept_index(
-                            &object_key,
-                            &job.content_hash,
-                            "done",
-                            tokens_used,
-                            None,
-                        ).await;
-                        debug!("Successfully extracted {} concepts for {}", extracted.len(), object_key);
+                        let tokens_used = (job.evidence.title.len()
+                            + job.evidence.body.as_deref().unwrap_or("").len())
+                            / 4
+                            + 100;
+                        let _ = store
+                            .update_concept_index(
+                                &object_key,
+                                &job.content_hash,
+                                "done",
+                                tokens_used,
+                                None,
+                            )
+                            .await;
+                        debug!(
+                            "Successfully extracted {} concepts for {}",
+                            extracted.len(),
+                            object_key
+                        );
                     }
                     Err(e) => {
                         let err_str = e.to_string();
@@ -192,13 +257,15 @@ impl ConceptWorker {
                             "network"
                         };
                         warn!("Concept extraction failed for {}: {err_str}", object_key);
-                        let _ = store.update_concept_index(
-                            &object_key,
-                            &job.content_hash,
-                            "failed",
-                            0,
-                            Some(error_class),
-                        ).await;
+                        let _ = store
+                            .update_concept_index(
+                                &object_key,
+                                &job.content_hash,
+                                "failed",
+                                0,
+                                Some(error_class),
+                            )
+                            .await;
                     }
                 }
             });

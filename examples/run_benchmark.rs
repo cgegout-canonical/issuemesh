@@ -45,7 +45,38 @@ async fn main() -> Result<()> {
     let target = args.get(1).map(|s| s.as_str()).unwrap_or("1");
 
     let paths = Paths::resolve(None, None)?;
-    let config = Config::load_or_default(&paths.config_file)?;
+    let mut config = Config::load_or_default(&paths.config_file)?;
+
+    // Support --concepts on|off and ISSUEMESH_CONCEPTS env var
+    if let Ok(val) = std::env::var("ISSUEMESH_CONCEPTS") {
+        config.concepts.enabled =
+            val == "1" || val.to_lowercase() == "true" || val.to_lowercase() == "on";
+    }
+    for arg in &args {
+        if arg == "--concepts=on" || arg == "--concepts-on" {
+            config.concepts.enabled = true;
+        } else if arg == "--concepts=off" || arg == "--concepts-off" {
+            config.concepts.enabled = false;
+        }
+    }
+    for i in 0..args.len() {
+        if args[i] == "--concepts" && i + 1 < args.len() {
+            if args[i + 1] == "on" || args[i + 1] == "true" || args[i + 1] == "1" {
+                config.concepts.enabled = true;
+            } else if args[i + 1] == "off" || args[i + 1] == "false" || args[i + 1] == "0" {
+                config.concepts.enabled = false;
+            }
+        }
+    }
+    println!(
+        "Native Concept Layer: {}",
+        if config.concepts.enabled {
+            "ENABLED"
+        } else {
+            "DISABLED"
+        }
+    );
+
     let secrets = Secrets::load_from_file(&paths.secrets_file)?;
     let store = Store::open(&paths.db_file)?;
 

@@ -41,8 +41,14 @@ pub fn build_router(state: AppState) -> Router {
         .route("/search/{id}/run", get(search_run_page_handler))
         // API routes
         .route("/api/concepts", get(list_concepts_api_handler))
-        .route("/api/concepts/{id}/related", get(get_related_concepts_api_handler))
-        .route("/api/concepts/object/{*key}", get(get_object_concepts_api_handler))
+        .route(
+            "/api/concepts/{id}/related",
+            get(get_related_concepts_api_handler),
+        )
+        .route(
+            "/api/concepts/object/{*key}",
+            get(get_object_concepts_api_handler),
+        )
         .route(
             "/api/mcp",
             post(crate::mcp::mcp_http_handler).get(crate::mcp::mcp_info_handler),
@@ -1955,7 +1961,8 @@ async fn list_concepts_api_handler(
     let limit = params.limit.unwrap_or(50).min(200);
     let offset = params.offset.unwrap_or(0);
 
-    let (total_concepts, indexed_objects, total_links) = match state.store.get_concept_stats().await {
+    let (total_concepts, indexed_objects, total_links) = match state.store.get_concept_stats().await
+    {
         Ok(s) => s,
         Err(e) => {
             return (
@@ -2034,4 +2041,3 @@ async fn get_object_concepts_api_handler(
             .into_response(),
     }
 }
-
