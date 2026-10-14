@@ -136,3 +136,41 @@ async fn test_store_embeddings_and_dimension_guard() {
         .unwrap();
     assert_eq!(valid_after.len(), 0);
 }
+
+#[tokio::test]
+async fn test_concept_overlap_and_pairwise_scoring() {
+    let tmp = tempdir().unwrap();
+    let db_path = tmp.path().join("test_rank_concepts.db");
+    let store = Store::open(&db_path).unwrap();
+
+    let cid1 = store.upsert_concept("bgp routing", "feature").await.unwrap();
+    let cid2 = store.upsert_concept("frr daemon", "component").await.unwrap();
+    let cid3 = store.upsert_concept("memory leak", "problem").await.unwrap();
+
+    store.link_object_concept("jira:issue:A", cid1, 1.0, "title", "hA").await.unwrap();
+    store.link_object_concept("jira:issue:A", cid2, 0.8, "body", "hA").await.unwrap();
+
+    store.link_object_concept("github:pull:B", cid1, 0.9, "title", "hB").await.unwrap();
+    store.link_object_concept("github:pull:B", cid2, 0.8, "body", "hB").await.unwrap();
+
+    store.link_object_concept("launchpad:bug:C", cid3, 1.0, "title", "hC").await.unwrap();
+
+    let ocs_a = store.get_concepts_for_object("jira:issue:A").await.unwrap();
+    let ocs_b = store.get_concepts_for_object("github:pull:B").await.unwrap();
+    let ocs_c = store.get_concepts_for_object("launchpad:bug:C").await.unwrap();
+
+    // High overlap between A and B
+    let overlap_ab = issuemesh::concepts::compute_pairwise_concept_overlap(&ocs_a, &ocs_b);
+    assert!(overlap_ab >= 0.85);
+
+    // Near zero overlap between A and C
+    let overlap_ac = issuemesh::concepts::compute_pairwise_concept_overlap(&ocs_a, &ocs_c);
+    assert_eq!(overlap_ac, 0.0);
+
+    // Overlap with query concept set
+    let mut query_set = std::collections::HashSet::new();
+    query_set.insert(cid1);
+    let q_score_a = issuemesh::concepts::compute_concept_overlap_score(&ocs_a, &query_set);
+    assert!(q_score_a > 0.5);
+}
+

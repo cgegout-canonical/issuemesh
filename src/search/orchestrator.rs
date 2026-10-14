@@ -331,6 +331,42 @@ impl SearchOrchestrator {
             }
         }
 
+        // Concept Search: retrieve concepts matching query and compute concept overlap score
+        if cfg.concepts.enabled {
+            if let Ok(concept_hits) = crate::concepts::concept_search(&state.store, &plan.query, 10).await {
+                let mut query_concept_ids = std::collections::HashSet::new();
+                for hit in &concept_hits {
+                    query_concept_ids.insert(hit.concept.concept_id);
+                    // Add direct matching objects to candidates if score is high
+                    for (obj_key, weight) in &hit.matching_objects {
+                        let c_score = (hit.score * (*weight as f32)).clamp(0.0, 1.0);
+                        let prev = semantic_scores.get(obj_key).copied().unwrap_or(0.0);
+                        semantic_scores.insert(obj_key.clone(), f32::max(prev, c_score));
+
+                        if c_score > 0.35 && !candidate_evidence.contains_key(obj_key) {
+                            if let Some(parsed_ref) = ObjectRef::from_key(obj_key) {
+                                if let Ok(Some(ev)) = state.store.get_object(&parsed_ref).await {
+                                    candidate_evidence.insert(obj_key.clone(), ev);
+                                    depths.insert(obj_key.clone(), 0);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // For all current candidate objects, update semantic_score = max(embedding_cosine, concept_overlap_score)
+                for key in candidate_evidence.keys() {
+                    if let Ok(ocs) = state.store.get_concepts_for_object(key).await {
+                        let overlap = crate::concepts::compute_concept_overlap_score(&ocs, &query_concept_ids);
+                        if overlap > 0.0 {
+                            let prev = semantic_scores.get(key).copied().unwrap_or(0.0);
+                            semantic_scores.insert(key.clone(), f32::max(prev, overlap));
+                        }
+                    }
+                }
+            }
+        }
+
         emit(SearchEvent::LocalSearchCompleted {
             objects: candidate_evidence.len(),
         })
@@ -701,6 +737,41 @@ impl SearchOrchestrator {
                 nodes: candidate_evidence.len(),
             })
             .await;
+        }
+
+        // Infer concept-derived relations (same_problem with confidence 0.60, detected_by = "concept")
+        if cfg.concepts.enabled {
+            let candidate_keys: Vec<String> = candidate_evidence.keys().cloned().collect();
+            let mut obj_concepts_map: std::collections::HashMap<String, Vec<crate::store::ObjectConceptRecord>> = std::collections::HashMap::new();
+            for k in &candidate_keys {
+                if let Ok(ocs) = state.store.get_concepts_for_object(k).await {
+                    if !ocs.is_empty() {
+                        obj_concepts_map.insert(k.clone(), ocs);
+                    }
+                }
+            }
+
+            for i in 0..candidate_keys.len() {
+                for j in (i + 1)..candidate_keys.len() {
+                    let k1 = &candidate_keys[i];
+                    let k2 = &candidate_keys[j];
+                    if let (Some(c1), Some(c2)) = (obj_concepts_map.get(k1), obj_concepts_map.get(k2)) {
+                        let overlap = crate::concepts::compute_pairwise_concept_overlap(c1, c2);
+                        if overlap >= 0.60 {
+                            if let (Some(r1), Some(r2)) = (ObjectRef::from_key(k1), ObjectRef::from_key(k2)) {
+                                let rel = crate::connectors::Relation {
+                                    from: r1,
+                                    to: r2,
+                                    relation_type: "same_problem".to_string(),
+                                    detected_by: "concept".to_string(),
+                                    confidence: 0.60,
+                                };
+                                collected_relations.push(rel);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // 6. Consistency Checks
