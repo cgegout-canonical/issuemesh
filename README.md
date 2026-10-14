@@ -71,7 +71,7 @@ Navigating complex technical initiatives often requires correlating tickets acro
 
 ## 3. Engineering Intelligence Suite (10 Superpowers)
 
-IssueMesh v1.0.0 features a dedicated **Engineering Intelligence Suite** designed to bridge delivery gaps, spot systemic risk, and answer cross-system engineering questions with deterministic evidence.
+IssueMesh v1.1.0 features a dedicated **Engineering Intelligence Suite** designed to bridge delivery gaps, spot systemic risk, and answer cross-system engineering questions with deterministic evidence.
 
 ```text
                ┌────────────────────────────────────────────────────────┐
@@ -81,7 +81,7 @@ IssueMesh v1.0.0 features a dedicated **Engineering Intelligence Suite** designe
                │  2. Impact Analysis      │  7. Release Readiness       │
                │  3. Engineering Risk     │  8. Evidence Diff           │
                │  4. Story Reconstruction │  9. Evidence Confidence     │
-               │  5. Governance Gaps      │ 10. Native MCP Server (x16) │
+               │  5. Governance Gaps      │ 10. Native MCP Server (x18) │
                └──────────────────────────┴─────────────────────────────┘
 ```
 
@@ -560,7 +560,7 @@ CFLAGS="-fno-sanitize=undefined -fwrapv" cargo run --example run_50_questions
 
 ## 16. Native Concept Layer & Domain Knowledge Graph
 
-IssueMesh v1.0.0 features a native, local-first **Domain Concept Layer** that extracts high-level engineering concepts (`component`, `feature`, `technology`, `problem`, `release`, `team`) from tracker objects using bounded background LLM workers and SQLite datastore tables:
+IssueMesh v1.1.0 features a native, local-first **Domain Concept Layer** that extracts high-level engineering concepts (`component`, `feature`, `technology`, `problem`, `release`, `team`) from tracker objects using bounded background LLM workers and SQLite datastore tables:
 
 ### Key Highlights
 - **Derived Knowledge Invariant**: Authoritative tracker states, assignees, dates, and relations remain authoritative. Concepts are purely derived knowledge, surfacing candidate links and explaining cross-tracker overlaps without mutating raw records.
@@ -578,9 +578,9 @@ IssueMesh v1.0.0 features a native, local-first **Domain Concept Layer** that ex
 
 ## 17. Portability & Canonical Snap Package
 
-The application has been bumped to **v1.0.0** and packaged into a self-contained, strictly confined Canonical Snap package:
+The application has been bumped to **v1.1.0** and packaged into a self-contained, strictly confined Canonical Snap package:
 
-• **Package Artifact**: `issuemesh_1.0.0_amd64.snap` (2.6MB)  
+• **Package Artifact**: `issuemesh_1.1.0_amd64.snap` (2.8MB)  
 • **Base**: `core24` (Ubuntu 24.04 LTS)  
 • **Confinement**: `strict`  
 • **Plugs**: `network`, `network-bind`, `home`  
@@ -588,7 +588,7 @@ The application has been bumped to **v1.0.0** and packaged into a self-contained
 #### Packaged Components:
 
 ```text
-issuemesh_1.0.0_amd64.snap
+issuemesh_1.1.0_amd64.snap
 ├── bin/
 │   ├── issuemesh           # Release binary (Rustls TLS + bundled SQLite FTS5, zero external dynamic .so dependencies)
 │   └── issuemesh-launch    # Environment launcher initializing $SNAP_USER_COMMON and relocatable state
@@ -622,7 +622,7 @@ To install and run the generated snap on your workstation:
 
 ```bash
 # 1. Install under strict confinement
-sudo snap install --dangerous ./issuemesh_1.0.0_amd64.snap
+sudo snap install --dangerous ./issuemesh_1.1.0_amd64.snap
 
 # 2. Connect standard interfaces (if not auto-connected)
 sudo snap connect issuemesh:network
