@@ -186,3 +186,53 @@ CREATE TABLE IF NOT EXISTS saved_investigations (
 CREATE INDEX IF NOT EXISTS idx_saved_investigations_created_at ON saved_investigations(created_at);
 CREATE INDEX IF NOT EXISTS idx_saved_investigations_title ON saved_investigations(title);
 
+-- Concepts Native Layer (v4)
+CREATE TABLE IF NOT EXISTS concepts (
+    concept_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    kind TEXT NOT NULL,
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    object_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS object_concepts (
+    object_key TEXT NOT NULL,
+    concept_id INTEGER NOT NULL,
+    weight REAL NOT NULL,
+    extracted_from TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    indexed_at TEXT NOT NULL,
+    PRIMARY KEY (object_key, concept_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_object_concepts_concept_id ON object_concepts(concept_id);
+CREATE INDEX IF NOT EXISTS idx_object_concepts_object_key ON object_concepts(object_key);
+
+CREATE TABLE IF NOT EXISTS concept_links (
+    concept_a INTEGER NOT NULL,
+    concept_b INTEGER NOT NULL,
+    co_occurrence INTEGER NOT NULL DEFAULT 1,
+    last_seen TEXT NOT NULL,
+    PRIMARY KEY (concept_a, concept_b)
+);
+
+CREATE INDEX IF NOT EXISTS idx_concept_links_b ON concept_links(concept_b);
+
+CREATE TABLE IF NOT EXISTS concept_index (
+    object_key TEXT PRIMARY KEY,
+    content_hash TEXT NOT NULL,
+    status TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    indexed_at TEXT NOT NULL,
+    tokens_used INTEGER NOT NULL DEFAULT 0,
+    error_class TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_concept_index_status ON concept_index(status);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS concepts_fts USING fts5(
+    name,
+    tokenize='porter unicode61'
+);
+

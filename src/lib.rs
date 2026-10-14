@@ -1,4 +1,5 @@
 pub mod config;
+pub mod concepts;
 pub mod connectors;
 pub mod intelligence;
 pub mod introspection;
@@ -22,6 +23,7 @@ pub struct AppState {
     pub store: store::Store,
     pub jobs: jobs::JobManager,
     pub introspection: introspection::IntrospectionScheduler,
+    pub concept_worker: concepts::ConceptWorkerHandle,
     pub search_results:
         Arc<RwLock<std::collections::HashMap<String, search::orchestrator::DeepSearchResult>>>,
 }
@@ -33,13 +35,24 @@ impl AppState {
         secrets: config::Secrets,
         store: store::Store,
     ) -> Self {
+        let config_arc = Arc::new(RwLock::new(config));
+        let secrets_arc = Arc::new(RwLock::new(secrets));
+        let max_q = 256;
+        let (concept_worker, _) = concepts::ConceptWorker::start(
+            store.clone(),
+            config_arc.clone(),
+            secrets_arc.clone(),
+            max_q,
+        );
+
         Self {
             paths,
-            config: Arc::new(RwLock::new(config)),
-            secrets: Arc::new(RwLock::new(secrets)),
+            config: config_arc,
+            secrets: secrets_arc,
             store,
             jobs: jobs::JobManager::new(),
             introspection: introspection::IntrospectionScheduler::new(),
+            concept_worker,
             search_results: Arc::new(RwLock::new(std::collections::HashMap::new())),
         }
     }

@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tokio::task;
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 3;
+pub const CURRENT_SCHEMA_VERSION: i64 = 4;
 
 pub const MIGRATION_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -186,6 +186,57 @@ CREATE INDEX IF NOT EXISTS idx_saved_investigations_created_at ON saved_investig
 CREATE INDEX IF NOT EXISTS idx_saved_investigations_title ON saved_investigations(title);
 "#;
 
+pub const MIGRATION_V4: &str = r#"
+CREATE TABLE IF NOT EXISTS concepts (
+    concept_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    kind TEXT NOT NULL,
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    object_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS object_concepts (
+    object_key TEXT NOT NULL,
+    concept_id INTEGER NOT NULL,
+    weight REAL NOT NULL,
+    extracted_from TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    indexed_at TEXT NOT NULL,
+    PRIMARY KEY (object_key, concept_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_object_concepts_concept_id ON object_concepts(concept_id);
+CREATE INDEX IF NOT EXISTS idx_object_concepts_object_key ON object_concepts(object_key);
+
+CREATE TABLE IF NOT EXISTS concept_links (
+    concept_a INTEGER NOT NULL,
+    concept_b INTEGER NOT NULL,
+    co_occurrence INTEGER NOT NULL DEFAULT 1,
+    last_seen TEXT NOT NULL,
+    PRIMARY KEY (concept_a, concept_b)
+);
+
+CREATE INDEX IF NOT EXISTS idx_concept_links_b ON concept_links(concept_b);
+
+CREATE TABLE IF NOT EXISTS concept_index (
+    object_key TEXT PRIMARY KEY,
+    content_hash TEXT NOT NULL,
+    status TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    indexed_at TEXT NOT NULL,
+    tokens_used INTEGER NOT NULL DEFAULT 0,
+    error_class TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_concept_index_status ON concept_index(status);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS concepts_fts USING fts5(
+    name,
+    tokenize='porter unicode61'
+);
+"#;
+
 #[derive(Clone)]
 pub struct Store {
     conn: Arc<Mutex<Connection>>,
@@ -264,9 +315,20 @@ impl Store {
                 .context("Failed to apply migration v3")?;
             conn.execute(
                 "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?1, ?2)",
-                rusqlite::params![CURRENT_SCHEMA_VERSION, now],
+                rusqlite::params![3, now],
             )
             .context("Failed to record schema version 3")?;
+        }
+
+        if current_version < 4 {
+            let now = chrono::Utc::now().to_rfc3339();
+            conn.execute_batch(MIGRATION_V4)
+                .context("Failed to apply migration v4")?;
+            conn.execute(
+                "INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?1, ?2)",
+                rusqlite::params![CURRENT_SCHEMA_VERSION, now],
+            )
+            .context("Failed to record schema version 4")?;
         }
 
         Ok(())
@@ -2313,6 +2375,398 @@ impl Store {
         })
         .await
     }
+
+    // ------------------------------------------------------------------------
+    // Concept Layer Operations (SPEC.md / Concepts Stage 1)
+    // ------------------------------------------------------------------------
+
+    /// Upsert concept: returns concept_id
+    pub async fn upsert_concept(&self, name: &str, kind: &str) -> Result<i64> {
+        let name = name.to_lowercase().trim().to_string();
+        let kind = kind.to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        self.call(move |conn| {
+            let tx = conn.transaction()?;
+            let existing: Option<(i64, i64)> = tx
+                .query_row(
+                    "SELECT concept_id, object_count FROM concepts WHERE name = ?1",
+                    rusqlite::params![&name],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .ok();
+
+            let concept_id = match existing {
+                Some((id, _cnt)) => {
+                    tx.execute(
+                        "UPDATE concepts SET last_seen = ?1, kind = ?2 WHERE concept_id = ?3",
+                        rusqlite::params![&now, &kind, id],
+                    )?;
+                    id
+                }
+                None => {
+                    tx.execute(
+                        "INSERT INTO concepts (name, kind, first_seen, last_seen, object_count)
+                         VALUES (?1, ?2, ?3, ?4, 0)",
+                        rusqlite::params![&name, &kind, &now, &now],
+                    )?;
+                    let id = tx.last_insert_rowid();
+                    // Also insert into FTS
+                    let _ = tx.execute(
+                        "INSERT INTO concepts_fts (name) VALUES (?1)",
+                        rusqlite::params![&name],
+                    );
+                    id
+                }
+            };
+
+            tx.commit()?;
+            Ok(concept_id)
+        })
+        .await
+    }
+
+    /// Link concept to an object and update concept object_count
+    pub async fn link_object_concept(
+        &self,
+        object_key: &str,
+        concept_id: i64,
+        weight: f64,
+        extracted_from: &str,
+        content_hash: &str,
+    ) -> Result<()> {
+        let object_key = object_key.to_string();
+        let extracted_from = extracted_from.to_string();
+        let content_hash = content_hash.to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        self.call(move |conn| {
+            let tx = conn.transaction()?;
+            tx.execute(
+                "INSERT INTO object_concepts (object_key, concept_id, weight, extracted_from, content_hash, indexed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT(object_key, concept_id) DO UPDATE SET
+                     weight = excluded.weight,
+                     extracted_from = excluded.extracted_from,
+                     content_hash = excluded.content_hash,
+                     indexed_at = excluded.indexed_at",
+                rusqlite::params![&object_key, concept_id, weight, &extracted_from, &content_hash, &now],
+            )?;
+
+            // Recompute object_count for the concept
+            let count: i64 = tx.query_row(
+                "SELECT COUNT(DISTINCT object_key) FROM object_concepts WHERE concept_id = ?1",
+                rusqlite::params![concept_id],
+                |r| r.get(0),
+            ).unwrap_or(0);
+
+            tx.execute(
+                "UPDATE concepts SET object_count = ?1, last_seen = ?2 WHERE concept_id = ?3",
+                rusqlite::params![count, &now, concept_id],
+            )?;
+
+            tx.commit()?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Increment or insert co-occurrence for a pair of concepts (a < b invariant)
+    pub async fn link_concept_pair(&self, a: i64, b: i64) -> Result<()> {
+        let (concept_a, concept_b) = if a < b { (a, b) } else { (b, a) };
+        if concept_a == concept_b {
+            return Ok(());
+        }
+        let now = chrono::Utc::now().to_rfc3339();
+
+        self.call(move |conn| {
+            conn.execute(
+                "INSERT INTO concept_links (concept_a, concept_b, co_occurrence, last_seen)
+                 VALUES (?1, ?2, 1, ?3)
+                 ON CONFLICT(concept_a, concept_b) DO UPDATE SET
+                     co_occurrence = co_occurrence + 1,
+                     last_seen = excluded.last_seen",
+                rusqlite::params![concept_a, concept_b, &now],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Update concept index record for an object
+    pub async fn update_concept_index(
+        &self,
+        object_key: &str,
+        content_hash: &str,
+        status: &str,
+        tokens_used: usize,
+        error_class: Option<&str>,
+    ) -> Result<()> {
+        let object_key = object_key.to_string();
+        let content_hash = content_hash.to_string();
+        let status = status.to_string();
+        let err_class = error_class.map(|s| s.to_string());
+        let now = chrono::Utc::now().to_rfc3339();
+
+        self.call(move |conn| {
+            conn.execute(
+                "INSERT INTO concept_index (object_key, content_hash, status, attempts, indexed_at, tokens_used, error_class)
+                 VALUES (?1, ?2, ?3, 1, ?4, ?5, ?6)
+                 ON CONFLICT(object_key) DO UPDATE SET
+                     content_hash = excluded.content_hash,
+                     status = excluded.status,
+                     attempts = attempts + 1,
+                     indexed_at = excluded.indexed_at,
+                     tokens_used = tokens_used + excluded.tokens_used,
+                     error_class = excluded.error_class",
+                rusqlite::params![&object_key, &content_hash, &status, &now, tokens_used as i64, err_class],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Check if object is already indexed with given content_hash
+    pub async fn get_concept_index_status(&self, object_key: &str) -> Result<Option<(String, String)>> {
+        let key = object_key.to_string();
+        self.call(move |conn| {
+            let res = conn.query_row(
+                "SELECT content_hash, status FROM concept_index WHERE object_key = ?1",
+                rusqlite::params![&key],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            ).ok();
+            Ok(res)
+        })
+        .await
+    }
+
+    /// Get all concepts linked to an object ordered by weight desc
+    pub async fn get_concepts_for_object(&self, object_key: &str) -> Result<Vec<ObjectConceptRecord>> {
+        let key = object_key.to_string();
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT oc.object_key, oc.concept_id, c.name, c.kind, oc.weight, oc.extracted_from, oc.content_hash, oc.indexed_at
+                 FROM object_concepts oc
+                 JOIN concepts c ON oc.concept_id = c.concept_id
+                 WHERE oc.object_key = ?1
+                 ORDER BY oc.weight DESC",
+            )?;
+
+            let rows = stmt.query_map(rusqlite::params![&key], |row| {
+                Ok(ObjectConceptRecord {
+                    object_key: row.get(0)?,
+                    concept_id: row.get(1)?,
+                    concept_name: row.get(2)?,
+                    concept_kind: row.get(3)?,
+                    weight: row.get(4)?,
+                    extracted_from: row.get(5)?,
+                    content_hash: row.get(6)?,
+                    indexed_at: row.get(7)?,
+                })
+            })?;
+
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    /// List all concepts ordered by object_count desc, limit
+    pub async fn list_concepts(&self, limit: usize) -> Result<Vec<ConceptRecord>> {
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT concept_id, name, kind, first_seen, last_seen, object_count
+                 FROM concepts
+                 ORDER BY object_count DESC, name ASC
+                 LIMIT ?1",
+            )?;
+
+            let rows = stmt.query_map(rusqlite::params![limit as i64], |row| {
+                Ok(ConceptRecord {
+                    concept_id: row.get(0)?,
+                    name: row.get(1)?,
+                    kind: row.get(2)?,
+                    first_seen: row.get(3)?,
+                    last_seen: row.get(4)?,
+                    object_count: row.get(5)?,
+                })
+            })?;
+
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    /// List top concepts for a specific container/source
+    pub async fn list_top_concepts_for_source(&self, source: &str, limit: usize) -> Result<Vec<ConceptRecord>> {
+        let src = source.to_string();
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT c.concept_id, c.name, c.kind, c.first_seen, c.last_seen, COUNT(DISTINCT oc.object_key) as src_count
+                 FROM concepts c
+                 JOIN object_concepts oc ON c.concept_id = oc.concept_id
+                 JOIN objects o ON oc.object_key = o.object_key
+                 WHERE o.source = ?1
+                 GROUP BY c.concept_id
+                 ORDER BY src_count DESC, c.name ASC
+                 LIMIT ?2",
+            )?;
+
+            let rows = stmt.query_map(rusqlite::params![&src, limit as i64], |row| {
+                Ok(ConceptRecord {
+                    concept_id: row.get(0)?,
+                    name: row.get(1)?,
+                    kind: row.get(2)?,
+                    first_seen: row.get(3)?,
+                    last_seen: row.get(4)?,
+                    object_count: row.get(5)?,
+                })
+            })?;
+
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    /// Get related concepts through co-occurrence graph
+    pub async fn get_related_concepts(&self, concept_id: i64, limit: usize) -> Result<Vec<(ConceptRecord, i64)>> {
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT c.concept_id, c.name, c.kind, c.first_seen, c.last_seen, c.object_count, cl.co_occurrence
+                 FROM concept_links cl
+                 JOIN concepts c ON (c.concept_id = CASE WHEN cl.concept_a = ?1 THEN cl.concept_b ELSE cl.concept_a END)
+                 WHERE cl.concept_a = ?1 OR cl.concept_b = ?1
+                 ORDER BY cl.co_occurrence DESC, c.object_count DESC
+                 LIMIT ?2",
+            )?;
+
+            let rows = stmt.query_map(rusqlite::params![concept_id, limit as i64], |row| {
+                let rec = ConceptRecord {
+                    concept_id: row.get(0)?,
+                    name: row.get(1)?,
+                    kind: row.get(2)?,
+                    first_seen: row.get(3)?,
+                    last_seen: row.get(4)?,
+                    object_count: row.get(5)?,
+                };
+                let co: i64 = row.get(6)?;
+                Ok((rec, co))
+            })?;
+
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    /// Retrieve total concept count and indexed object count
+    pub async fn get_concept_stats(&self) -> Result<(i64, i64, i64)> {
+        self.call(|conn| {
+            let total_concepts: i64 = conn.query_row("SELECT COUNT(*) FROM concepts", [], |r| r.get(0)).unwrap_or(0);
+            let indexed_objects: i64 = conn.query_row("SELECT COUNT(*) FROM concept_index WHERE status = 'done'", [], |r| r.get(0)).unwrap_or(0);
+            let total_links: i64 = conn.query_row("SELECT COUNT(*) FROM concept_links", [], |r| r.get(0)).unwrap_or(0);
+            Ok((total_concepts, indexed_objects, total_links))
+        })
+        .await
+    }
+
+    /// Search concepts by FTS
+    pub async fn search_concepts_fts(&self, query: &str, limit: usize) -> Result<Vec<ConceptRecord>> {
+        let clean = query.trim().to_lowercase();
+        if clean.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        self.call(move |conn| {
+            let sanitized: String = clean
+                .chars()
+                .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+                .collect();
+            let terms: Vec<String> = sanitized
+                .split_whitespace()
+                .map(|w| format!("{}*", w))
+                .collect();
+            let match_expr = terms.join(" ");
+
+            let mut stmt = conn.prepare(
+                "SELECT c.concept_id, c.name, c.kind, c.first_seen, c.last_seen, c.object_count
+                 FROM concepts_fts fts
+                 JOIN concepts c ON fts.name = c.name
+                 WHERE concepts_fts MATCH ?1
+                 ORDER BY c.object_count DESC
+                 LIMIT ?2",
+            )?;
+
+            let rows = stmt.query_map(rusqlite::params![&match_expr, limit as i64], |row| {
+                Ok(ConceptRecord {
+                    concept_id: row.get(0)?,
+                    name: row.get(1)?,
+                    kind: row.get(2)?,
+                    first_seen: row.get(3)?,
+                    last_seen: row.get(4)?,
+                    object_count: row.get(5)?,
+                })
+            })?;
+
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    /// Find objects that share a concept
+    pub async fn get_objects_for_concept(&self, concept_id: i64, limit: usize) -> Result<Vec<(String, f64)>> {
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT object_key, weight FROM object_concepts
+                 WHERE concept_id = ?1
+                 ORDER BY weight DESC
+                 LIMIT ?2",
+            )?;
+
+            let rows = stmt.query_map(rusqlite::params![concept_id, limit as i64], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })?;
+
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
+    /// Total concept extraction tokens used today (UTC)
+    pub async fn get_concept_tokens_used_today(&self) -> Result<usize> {
+        self.call(|conn| {
+            let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+            let total: i64 = conn.query_row(
+                "SELECT COALESCE(SUM(tokens_used), 0) FROM concept_index WHERE indexed_at LIKE ?1",
+                rusqlite::params![format!("{}%", today)],
+                |r| r.get(0),
+            ).unwrap_or(0);
+            Ok(total as usize)
+        })
+        .await
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -2493,6 +2947,49 @@ pub struct WatchlistRecord {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ConceptRecord {
+    pub concept_id: i64,
+    pub name: String,
+    pub kind: String,
+    pub first_seen: String,
+    pub last_seen: String,
+    pub object_count: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ObjectConceptRecord {
+    pub object_key: String,
+    pub concept_id: i64,
+    pub concept_name: String,
+    pub concept_kind: String,
+    pub weight: f64,
+    pub extracted_from: String,
+    pub content_hash: String,
+    pub indexed_at: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ConceptLinkRecord {
+    pub concept_a: i64,
+    pub concept_b: i64,
+    pub concept_a_name: String,
+    pub concept_b_name: String,
+    pub co_occurrence: i64,
+    pub last_seen: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ConceptIndexRecord {
+    pub object_key: String,
+    pub content_hash: String,
+    pub status: String,
+    pub attempts: i64,
+    pub indexed_at: String,
+    pub tokens_used: i64,
+    pub error_class: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SavedInvestigationRecord {
     pub id: String,
     pub title: String,
@@ -2525,4 +3022,75 @@ mod tests {
         let ver2 = store.get_schema_version().await.unwrap();
         assert_eq!(ver2, CURRENT_SCHEMA_VERSION);
     }
+
+    #[tokio::test]
+    async fn test_concept_store_and_cooccurrence() {
+        let tmp = tempdir().unwrap();
+        let db_path = tmp.path().join("test_concepts.db");
+        let store = Store::open(&db_path).unwrap();
+
+        // 1. Upsert concepts
+        let cid1 = store.upsert_concept("ovn bgp", "component").await.unwrap();
+        let cid2 = store.upsert_concept("bgp evpn", "technology").await.unwrap();
+        assert!(cid1 > 0);
+        assert!(cid2 > 0);
+
+        // 2. Link object to concept
+        store
+            .link_object_concept(
+                "jira:issue:OPEN-123",
+                cid1,
+                0.9,
+                "title",
+                "hash1",
+            )
+            .await
+            .unwrap();
+
+        store
+            .link_object_concept(
+                "jira:issue:OPEN-123",
+                cid2,
+                0.8,
+                "body",
+                "hash1",
+            )
+            .await
+            .unwrap();
+
+        // 3. Link concept pair co-occurrence
+        let (a, b) = if cid1 < cid2 { (cid1, cid2) } else { (cid2, cid1) };
+        store.link_concept_pair(a, b).await.unwrap();
+        store.link_concept_pair(a, b).await.unwrap(); // co-occurrence should become 2
+
+        // 4. Query concepts for object
+        let ocs = store.get_concepts_for_object("jira:issue:OPEN-123").await.unwrap();
+        assert_eq!(ocs.len(), 2);
+        assert_eq!(ocs[0].concept_name, "ovn bgp");
+
+        // 5. Query related concepts
+        let rels = store.get_related_concepts(a, 10).await.unwrap();
+        assert_eq!(rels.len(), 1);
+        assert_eq!(rels[0].1, 2); // co_occurrence is 2
+
+        // 6. FTS search
+        let fts = store.search_concepts_fts("ovn", 10).await.unwrap();
+        assert_eq!(fts.len(), 1);
+        assert_eq!(fts[0].name, "ovn bgp");
+
+        // 7. Stats
+        let (total_c, indexed_objs, links) = store.get_concept_stats().await.unwrap();
+        assert_eq!(total_c, 2);
+        assert_eq!(links, 1);
+        assert_eq!(indexed_objs, 0); // none marked "done" yet
+
+        // 8. Update index status
+        store
+            .update_concept_index("jira:issue:OPEN-123", "hash1", "done", 50, None)
+            .await
+            .unwrap();
+        let (_, indexed_objs2, _) = store.get_concept_stats().await.unwrap();
+        assert_eq!(indexed_objs2, 1);
+    }
 }
+

@@ -29,6 +29,9 @@ pub struct Config {
 
     #[serde(default)]
     pub introspection: IntrospectionConfig,
+
+    #[serde(default)]
+    pub concepts: ConceptsConfig,
 }
 
 fn default_onboarding_completed() -> bool {
@@ -175,6 +178,45 @@ impl Default for IntrospectionConfig {
     fn default() -> Self {
         Self {
             level: default_introspection_level(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConceptsConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_concepts_max_index_per_search")]
+    pub max_index_per_search: usize,
+    #[serde(default = "default_concepts_max_queue_depth")]
+    pub max_queue_depth: usize,
+    #[serde(default = "default_concepts_max_input_tokens")]
+    pub max_input_tokens: usize,
+    #[serde(default = "default_concepts_daily_token_budget")]
+    pub daily_token_budget: usize,
+}
+
+fn default_concepts_max_index_per_search() -> usize {
+    10
+}
+fn default_concepts_max_queue_depth() -> usize {
+    256
+}
+fn default_concepts_max_input_tokens() -> usize {
+    2000
+}
+fn default_concepts_daily_token_budget() -> usize {
+    50000
+}
+
+impl Default for ConceptsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_true(),
+            max_index_per_search: default_concepts_max_index_per_search(),
+            max_queue_depth: default_concepts_max_queue_depth(),
+            max_input_tokens: default_concepts_max_input_tokens(),
+            daily_token_budget: default_concepts_daily_token_budget(),
         }
     }
 }

@@ -1073,6 +1073,15 @@ pub struct IntrospectionForm {
 }
 
 #[derive(Deserialize, Serialize, Clone, Default)]
+pub struct ConceptsForm {
+    pub enabled: Option<bool>,
+    pub max_index_per_search: Option<usize>,
+    pub max_queue_depth: Option<usize>,
+    pub max_input_tokens: Option<usize>,
+    pub daily_token_budget: Option<usize>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Default)]
 pub struct SettingsPayload {
     pub github: GitHubForm,
     pub jira: JiraForm,
@@ -1080,6 +1089,7 @@ pub struct SettingsPayload {
     pub model: ModelForm,
     pub search: SearchForm,
     pub introspection: Option<IntrospectionForm>,
+    pub concepts: Option<ConceptsForm>,
 }
 
 async fn get_settings_handler(State(state): State<Arc<AppState>>) -> Response {
@@ -1168,6 +1178,24 @@ async fn apply_settings_update(
         if let Some(intro) = payload.introspection {
             if let Some(lvl) = intro.level {
                 cfg.introspection.level = lvl.min(4);
+            }
+        }
+
+        if let Some(c) = payload.concepts {
+            if let Some(en) = c.enabled {
+                cfg.concepts.enabled = en;
+            }
+            if let Some(m) = c.max_index_per_search {
+                cfg.concepts.max_index_per_search = m;
+            }
+            if let Some(q) = c.max_queue_depth {
+                cfg.concepts.max_queue_depth = q;
+            }
+            if let Some(i) = c.max_input_tokens {
+                cfg.concepts.max_input_tokens = i;
+            }
+            if let Some(b) = c.daily_token_budget {
+                cfg.concepts.daily_token_budget = b;
             }
         }
 

@@ -12,7 +12,7 @@ pub struct ModelClient {
     embedding_model: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub role: String,
     pub content: String,

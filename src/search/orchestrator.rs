@@ -905,6 +905,20 @@ impl SearchOrchestrator {
                 .await;
         }
 
+        // Enqueue candidate evidence items for concept extraction (bounded by max_index_per_search)
+        if cfg.concepts.enabled {
+            let max_idx = cfg.concepts.max_index_per_search;
+            for r in final_ranked.iter().take(max_idx) {
+                let ev = &r.evidence;
+                let content_hash = crate::store::Store::compute_content_hash(ev);
+                let job = crate::concepts::ConceptJob {
+                    evidence: ev.clone(),
+                    content_hash,
+                };
+                let _ = state.concept_worker.enqueue(job).await;
+            }
+        }
+
         let ev_items: Vec<crate::connectors::Evidence> =
             final_ranked.iter().map(|r| r.evidence.clone()).collect();
         let unavailable_sources_count = warnings

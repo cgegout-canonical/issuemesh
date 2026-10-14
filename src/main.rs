@@ -4,7 +4,6 @@ use anyhow::Result;
 use clap::Parser;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 use issuemesh::config::{Config, Secrets};
 use issuemesh::paths::Paths;
@@ -64,15 +63,7 @@ async fn main() -> Result<()> {
     let secrets = Secrets::load_from_file(&paths.secrets_file)?;
     let store = Store::open(&paths.db_file)?;
 
-    let app_state = AppState {
-        paths: paths.clone(),
-        config: Arc::new(RwLock::new(config.clone())),
-        secrets: Arc::new(RwLock::new(secrets)),
-        store,
-        jobs: issuemesh::jobs::JobManager::new(),
-        introspection: issuemesh::introspection::IntrospectionScheduler::new(),
-        search_results: Arc::new(RwLock::new(std::collections::HashMap::new())),
-    };
+    let app_state = AppState::new(paths.clone(), config.clone(), secrets, store);
 
     // If MCP subcommand is invoked, run stdio server and exit
     if let Some(Commands::Mcp) = cli.command {

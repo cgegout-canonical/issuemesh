@@ -8,7 +8,6 @@ use issuemesh::AppState;
 use serde_json::json;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
-use tokio::sync::RwLock;
 
 async fn create_test_state() -> Result<Arc<AppState>> {
     let tmp = NamedTempFile::new()?;
@@ -31,21 +30,19 @@ async fn create_test_state() -> Result<Arc<AppState>> {
     };
     store.upsert_object(ev).await?;
 
-    let state = AppState {
-        paths: Paths {
-            home: path.clone(),
-            secrets_file: path.clone(),
-            config_file: path.clone(),
-            db_file: path.clone(),
-            logs_dir: path.clone(),
-        },
-        config: Arc::new(RwLock::new(Config::default())),
-        secrets: Arc::new(RwLock::new(issuemesh::config::Secrets::default())),
-        store,
-        jobs: issuemesh::jobs::JobManager::new(),
-        introspection: issuemesh::introspection::IntrospectionScheduler::new(),
-        search_results: Arc::new(RwLock::new(std::collections::HashMap::new())),
+    let paths = Paths {
+        home: path.clone(),
+        secrets_file: path.clone(),
+        config_file: path.clone(),
+        db_file: path.clone(),
+        logs_dir: path.clone(),
     };
+    let state = AppState::new(
+        paths,
+        Config::default(),
+        issuemesh::config::Secrets::default(),
+        store,
+    );
 
     Ok(Arc::new(state))
 }
